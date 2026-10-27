@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "QUARK AI",
+    "slug": "quark-ai",
+    "scheme": "quarkai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#161616",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.krazos.quarkai",
+      "infoPlist": {
+        "CFBundleAllowMixedLocalizations": true,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.krazos.quarkai",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#161616"
+      },
+      "permissions": [
+        "CAMERA",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
+      ],
+      "usesCleartextTraffic": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-secure-store",
+      [
+        "expo-localization",
+        {
+          "supportsRTL": true
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "يحتاج QUARK AI إلى الصور لإرفاقها بالمحادثة.",
+          "cameraPermission": "يحتاج QUARK AI إلى الكاميرا لالتقاط صورة وإرفاقها بالمحادثة."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "استخدم Face ID لفتح QUARK AI."
+        }
+      ],
+      "expo-notifications",
+      "expo-background-task",
+      "@react-native-google-signin/google-signin"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
