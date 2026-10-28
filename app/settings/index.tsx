@@ -13,6 +13,7 @@ export default function SettingsHome() {
       <Group title="الاتصال">
         <Row icon="key" title="المفاتيح ونقاط الاتصال" sub={`${eps} نقطة`} onPress={() => r.push('/settings/endpoints')} />
         <Row icon="cpu" title="النماذج" sub="تفعيل النماذج واختيار الافتراضي" onPress={() => r.push('/models')} />
+        <Row icon="smartphone" title="نماذج على الجهاز" sub="llama.cpp · تنزيل GGUF وتشغيل دون إنترنت" onPress={() => r.push('/local')} />
         <Row icon="sliders" title="معاملات التوليد" sub="Temperature · Top P · Max Tokens" onPress={() => r.push('/settings/params')} />
       </Group>
       <Group title="الأدوات الذكية">

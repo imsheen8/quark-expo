@@ -17,6 +17,8 @@ export const RTL = ({ children, style }: { children: ReactNode; style?: StylePro
   <View style={[{ flex: 1, direction: 'rtl' }, style]}>{children}</View>
 );
 
+import { MenuIcon } from './MenuIcon';
+
 export const haptic = () => {
   if (useSettings.getState().haptics && Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 };
@@ -285,7 +287,7 @@ export function Header({
   const setSidebar = useUi((s) => s.setSidebar);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 54, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border, backgroundColor: c.bg }}>
-      {menu ? <IconButton name="menu" onPress={() => setSidebar(true)} label="القائمة" /> : null}
+      {menu ? <Pressable onPress={() => { haptic(); setSidebar(true); }} accessibilityLabel="القائمة" style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}><MenuIcon /></Pressable> : null}
       {back ? <IconButton name="arrow-right" onPress={typeof back === 'function' ? back : () => (router.canGoBack() ? router.back() : router.replace('/'))} label="رجوع" /> : null}
       <View style={{ flex: 1, paddingHorizontal: 6 }}>
         {typeof title === 'string' ? <T weight="bold" size={17} numberOfLines={1}>{title}</T> : title}

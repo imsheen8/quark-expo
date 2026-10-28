@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Image, KeyboardAvoidingView, Modal, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Dimensions, FlatList, Image, Keyboard, Modal, Platform, Pressable, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MenuIcon } from '../src/components/ui/MenuIcon';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -32,7 +32,7 @@ function Welcome() {
   const incog = useChats((s) => s.incog);
   return (
     <View style={{ alignItems: 'center', paddingHorizontal: 24, paddingBottom: 28, gap: 14 }}>
-      <T size={30} style={{ fontFamily: FONT.serif, textAlign: 'center', lineHeight: 46 }}>
+      <T size={26} style={{ fontFamily: FONT.serif, textAlign: 'center', lineHeight: 40 }}>
         {incog ? 'محادثة خفية — لن تُحفظ' : `${greeting()}، كيف أساعدك اليوم؟`}
       </T>
       {!hasEp ? (
@@ -58,6 +58,20 @@ export default function ChatScreen() {
   const [editing, setEditing] = useState<Msg | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [kb, setKb] = useState(0);
+  const [compH, setCompH] = useState(120);
+  const [rootH, setRootH] = useState(0);
+  const maxH = useRef(0);
+  const empty = !chat || chat.messages.length === 0;
+  // ارتفاع الكيبورد الفعلي، مع طرح ما قد يكون النظام قد قلّصه من نافذة التطبيق (لتجنّب الرفع المزدوج)
+  const shrink = rootH && maxH.current ? Math.max(0, maxH.current - rootH) : 0;
+  const lift = Math.max(0, kb - shrink);
+  useEffect(() => {
+    const ios = Platform.OS === 'ios';
+    const sh = Keyboard.addListener(ios ? 'keyboardWillChangeFrame' : 'keyboardDidShow', (e) => setKb(Math.max(0, Dimensions.get('screen').height - e.endCoordinates.screenY)));
+    const hd = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => setKb(0));
+    return () => { sh.remove(); hd.remove(); };
+  }, []);
   const list = useRef<FlatList>(null);
   const bottom = useRef(true);
 
@@ -92,11 +106,12 @@ export default function ChatScreen() {
   const initial = useMemo(() => (editing ? { text: editing.content, imgs: editing.imgs ?? [], files: editing.files ?? [] } : null), [editing]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: ins.top }}>
+    <View onLayout={(e) => { const h = e.nativeEvent.layout.height; maxH.current = Math.max(maxH.current, h); setRootH(h); }} style={{ flex: 1, backgroundColor: c.bg, paddingTop: ins.top }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, height: 56 }}>
         <Pressable onPress={() => { haptic(); setSidebar(true); }} accessibilityLabel="القائمة" style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}><MenuIcon /></Pressable>
         <T size={14} color="muted" numberOfLines={1} style={{ flex: 1, textAlign: 'center' }}>{chat?.title ?? ''}</T>
         {chat && !chat.temp ? <IconButton name="more-vertical" label="المزيد" onPress={() => setMenu(chat.id)} /> : null}
+        {empty ? (
         <Pressable
           onPress={() => { haptic(); const v = !incog; setIncog(v); if (v) setCurrent(null); }}
           accessibilityLabel="محادثة خفية"
@@ -104,53 +119,59 @@ export default function ChatScreen() {
         >
           <MaterialCommunityIcons name={incog ? 'ghost' : 'ghost-outline'} size={26} color={incog ? c.accent : c.text} />
         </Pressable>
+        ) : null}
       </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
-        <View style={{ flex: 1 }}>
-          {!chat || data.length === 0 ? (
-            <View style={{ flex: 1 }} />
-          ) : (
-            <FlatList
-              ref={list}
-              data={data}
-              keyExtractor={(m) => m.id}
-              onScroll={onScroll}
-              scrollEventThrottle={64}
-              contentContainerStyle={{ paddingVertical: 14, gap: 18 }}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) =>
-                item.id === '__live' ? (
-                  <View style={{ paddingHorizontal: 16, gap: 8 }}>
-                    {stream.status ? <T size={12.5} color="accent">{stream.status}</T> : null}
-                    {stream.steps.length ? <AgentSteps steps={stream.steps} live /> : null}
-                    {stream.think ? <Thinking text={stream.think} secs={stream.secs} live={!stream.text} /> : null}
-                    {stream.text ? <Markdown text={stream.text} /> : !stream.think ? <Typing /> : null}
-                  </View>
-                ) : (
-                  <MessageView
-                    msg={item}
-                    isLast={item.id === lastId && !live}
-                    onRegenerate={() => chat && regenerate(chat.id)}
-                    onEdit={item.role === 'user' && !live ? setEditing : undefined}
-                    onDelete={!live ? (m) => chat && useChats.getState().deleteMessage(chat.id, m.id) : undefined}
-                    onImage={setViewer}
-                  />
-                )
-              }
-            />
-          )}
-          {!atBottom && data.length > 0 ? (
-            <Pressable onPress={() => list.current?.scrollToEnd({ animated: true })} style={{ position: 'absolute', alignSelf: 'center', bottom: 10, width: 38, height: 38, borderRadius: 19, backgroundColor: c.surface3, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.border }}>
-              <Icon name="arrow-down" size={18} color={c.text} />
-            </Pressable>
-          ) : null}
-        </View>
-        <View style={{ paddingBottom: ins.bottom }}>
-          {!chat || data.length === 0 ? <Welcome /> : null}
-          <Composer busy={stream.busy} onSend={send} onStop={stopGeneration} onPickModel={() => setPicker(true)} editing={!!editing} initial={initial} onCancelEdit={() => setEditing(null)} />
-        </View>
-        {!chat || data.length === 0 ? <View style={{ flex: 1.15 }} /> : null}
-      </KeyboardAvoidingView>
+      <View style={{ flex: 1, marginBottom: empty ? 0 : lift }}>
+        {!empty ? (
+          <FlatList
+            ref={list}
+            data={data}
+            keyExtractor={(m) => m.id}
+            onScroll={onScroll}
+            scrollEventThrottle={64}
+            contentContainerStyle={{ paddingTop: 14, paddingBottom: compH + 14, gap: 18 }}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) =>
+              item.id === '__live' ? (
+                <View style={{ paddingHorizontal: 16, gap: 8 }}>
+                  {stream.status ? <T size={12.5} color="accent">{stream.status}</T> : null}
+                  {stream.steps.length ? <AgentSteps steps={stream.steps} live /> : null}
+                  {stream.think ? <Thinking text={stream.think} secs={stream.secs} live={!stream.text} /> : null}
+                  {stream.text ? <Markdown text={stream.text} /> : !stream.think ? <Typing /> : null}
+                </View>
+              ) : (
+                <MessageView
+                  msg={item}
+                  isLast={item.id === lastId && !live}
+                  onRegenerate={() => chat && regenerate(chat.id)}
+                  onEdit={item.role === 'user' && !live ? setEditing : undefined}
+                  onDelete={!live ? (m) => chat && useChats.getState().deleteMessage(chat.id, m.id) : undefined}
+                  onImage={setViewer}
+                />
+              )
+            }
+          />
+        ) : null}
+        {!atBottom && !empty ? (
+          <Pressable onPress={() => list.current?.scrollToEnd({ animated: true })} style={{ position: 'absolute', alignSelf: 'center', bottom: compH + 10, width: 38, height: 38, borderRadius: 19, backgroundColor: c.surface3, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.border }}>
+            <Icon name="arrow-down" size={18} color={c.text} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* منطقة الإدخال: عائمة فوق المحتوى بلا شريط خلفها. العنصر نفسه يبقى (لا يُعاد إنشاؤه) عند الإرسال الأول فلا يُغلق الكيبورد */}
+      <View
+        pointerEvents="box-none"
+        onLayout={(e) => !empty && setCompH(e.nativeEvent.layout.height)}
+        style={{
+          position: 'absolute', start: 0, end: 0,
+          bottom: empty ? lift : lift || ins.bottom,
+          ...(empty ? { top: 56 + ins.top, justifyContent: 'center', paddingBottom: lift ? 0 : ins.bottom + 70 } : {}),
+        }}
+      >
+        {empty ? <Welcome /> : null}
+        <Composer busy={stream.busy} onSend={send} onStop={stopGeneration} onPickModel={() => setPicker(true)} editing={!!editing} initial={initial} onCancelEdit={() => setEditing(null)} />
+      </View>
 
       <ModelPicker visible={picker} onClose={() => setPicker(false)} />
       <ChatActions chatId={menu} onClose={() => setMenu(null)} onDeleted={() => setCurrent(null)} />

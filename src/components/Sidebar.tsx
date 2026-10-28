@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Animated, Dimensions, Platform, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FILTERS, passFilter } from '../lib/chatFilter';
 import { useSettings } from '../store/settings';
@@ -79,31 +79,31 @@ export function Sidebar() {
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, height: 52 }}>
-          <T weight="bold" size={24} style={{ flex: 1, fontFamily: FONT.serif, letterSpacing: 1.5 }}>QUARK AI</T>
-          <Pressable onPress={() => { haptic(); setShowSearch((v) => !v); setQ(''); }} accessibilityLabel="بحث" style={{ width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', backgroundColor: showSearch ? c.surface2 : 'transparent' }}>
-            <Icon name="search" size={25} color={c.text} />
+          <T weight="bold" size={21} style={{ flex: 1, fontFamily: Platform.select({ android: 'serif', ios: 'Georgia', default: 'serif' }), fontWeight: '700', letterSpacing: 1 }}>QUARK AI</T>
+          <Pressable onPress={() => { haptic(); setShowSearch((v) => !v); setQ(''); }} accessibilityLabel="بحث" style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: showSearch ? c.surface2 : 'transparent' }}>
+            <Icon name="search" size={21} color={c.text} />
           </Pressable>
         </View>
         {showSearch ? (
-          <View style={{ marginHorizontal: 16, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1.5, borderBottomColor: c.accent, height: 50 }}>
-            <Icon name="search" size={20} color={c.accent} />
-            <TextInput cursorColor={c.accent} selectionColor={c.accent + '55'} selectionHandleColor={c.accent} autoFocus value={q} onChangeText={setQ} placeholder="بحث" placeholderTextColor={c.muted} style={{ flex: 1, color: c.text, fontSize: 17, textAlign: 'auto' }} />
+          <View style={{ marginHorizontal: 16, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1.5, borderBottomColor: c.accent, height: 44 }}>
+            <Icon name="search" size={18} color={c.accent} />
+            <TextInput cursorColor={c.accent} selectionColor={c.accent + '55'} selectionHandleColor={c.accent} autoFocus value={q} onChangeText={setQ} placeholder="بحث" placeholderTextColor={c.muted} style={{ flex: 1, color: c.text, fontSize: 15, textAlign: 'auto' }} />
           </View>
         ) : null}
 
         <View style={{ paddingHorizontal: 8, gap: 2 }}>
           {NAV.map((n) => (
-            <Pressable key={n.href} onPress={() => go(n.href)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 15, paddingHorizontal: 14, borderRadius: 14, backgroundColor: pressed ? c.surface2 : 'transparent' })}>
-              <Icon name={n.icon} size={24} color={c.text2} />
-              <T size={16.5}>{n.label}</T>
+            <Pressable key={n.href} onPress={() => go(n.href)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 12, borderRadius: 12, backgroundColor: pressed ? c.surface2 : 'transparent' })}>
+              <Icon name={n.icon} size={19} color={c.text2} />
+              <T weight="medium">{n.label}</T>
             </Pressable>
           ))}
         </View>
         <View style={{ height: 1, backgroundColor: c.border, marginVertical: 8, marginHorizontal: 14 }} />
         <View onLayout={(e) => setMenuY(e.nativeEvent.layout.y + e.nativeEvent.layout.height)} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingBottom: 4 }}>
-          <T size={13.5} color="muted" style={{ flex: 1 }}>{q ? 'نتائج البحث' : filterLabel(filter, tags)}</T>
-          <Pressable onPress={() => { haptic(); setMenu(menu ? null : 'main'); }} accessibilityLabel="تصفية" style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: menu || filter !== 'recent' ? c.surface2 : 'transparent' }}>
-            <Icon name="filter" size={20} color={filter !== 'recent' ? c.accent : c.text2} />
+          <T size={12} weight="semibold" color="muted" style={{ flex: 1 }}>{q ? 'نتائج البحث' : filterLabel(filter, tags)}</T>
+          <Pressable onPress={() => { haptic(); setMenu(menu ? null : 'main'); }} accessibilityLabel="تصفية" style={{ width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: menu || filter !== 'recent' ? c.surface2 : 'transparent' }}>
+            <Icon name="filter" size={17} color={filter !== 'recent' ? c.accent : c.text2} />
           </Pressable>
         </View>
         <FlatList
@@ -120,21 +120,21 @@ export function Sidebar() {
               onLongPress={() => { haptic(); setActions(item.id); }}
               style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: item.id === currentId ? c.accentSoft : pressed ? c.surface2 : 'transparent' })}
             >
-              <Icon name={item.pinned ? 'bookmark' : 'message-circle'} size={20} color={item.pinned ? c.accent : c.text2} />
-              <T size={15} color={item.id === currentId ? 'text' : 'text2'} numberOfLines={1} style={{ flex: 1 }}>{item.title}</T>
+              <Icon name={item.pinned ? 'bookmark' : 'message-circle'} size={17} color={item.pinned ? c.accent : c.text2} />
+              <T size={14} color={item.id === currentId ? 'text' : 'text2'} numberOfLines={1} style={{ flex: 1 }}>{item.title}</T>
               {item.tags?.slice(0, 3).map((id) => { const t = tags.find((x) => x.id === id); return t ? <TagDot key={id} color={t.color} size={8} /> : null; })}
-              <IconButton name="more-vertical" size={17} onPress={() => setActions(item.id)} style={{ width: 32, height: 32 }} />
+              <IconButton name="more-vertical" size={16} onPress={() => setActions(item.id)} style={{ width: 32, height: 32 }} />
             </Pressable>
           )}
         />
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, paddingTop: 8 }}>
-          <Pressable onPress={() => go('/settings')} accessibilityLabel="الإعدادات" style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: c.surface2, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="user" size={24} color={c.text2} />
+          <Pressable onPress={() => go('/settings')} accessibilityLabel="الإعدادات" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: c.surface2, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="user" size={20} color={c.text2} />
           </Pressable>
           <View style={{ flex: 1 }} />
-          <Pressable onPress={newChat} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: c.accent, borderRadius: 30, height: 56, paddingHorizontal: 26 }}>
-            <T size={16.5} weight="semibold" color="onAccent">محادثة جديدة</T>
-            <Icon name="plus" size={22} color={c.onAccent} />
+          <Pressable onPress={newChat} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: c.accent, borderRadius: 24, height: 46, paddingHorizontal: 20 }}>
+            <T weight="semibold" color="onAccent">محادثة جديدة</T>
+            <Icon name="plus" size={18} color={c.onAccent} />
           </Pressable>
         </View>
         {menu ? (
@@ -177,9 +177,9 @@ function filterLabel(f: string, tags: { id: string; name: string }[]) {
 function MenuRow({ icon, label, on, go, dot, count, onPress }: { icon?: IconName; label: string; on?: boolean; go?: boolean; dot?: string; count?: number; onPress: () => void }) {
   const c = useColors();
   return (
-    <Pressable onPress={() => { haptic(); onPress(); }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 16, backgroundColor: pressed ? c.surface2 : 'transparent' })}>
-      {dot ? <TagDot color={dot} size={12} /> : icon ? <Icon name={icon} size={20} color={on ? c.accent : c.text2} /> : null}
-      <T size={15.5} color={on ? 'accent' : 'text'} style={{ flex: 1 }}>{label}</T>
+    <Pressable onPress={() => { haptic(); onPress(); }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14, backgroundColor: pressed ? c.surface2 : 'transparent' })}>
+      {dot ? <TagDot color={dot} size={12} /> : icon ? <Icon name={icon} size={18} color={on ? c.accent : c.text2} /> : null}
+      <T size={14} color={on ? 'accent' : 'text'} style={{ flex: 1 }}>{label}</T>
       {count != null ? <T size={12} color="muted">{count}</T> : null}
       {on && !go ? <Icon name="check" size={18} color={c.accent} /> : null}
       {go ? <Icon name="chevron-left" size={18} color={c.muted} /> : null}

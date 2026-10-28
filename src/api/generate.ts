@@ -231,7 +231,9 @@ export async function generateReply(chatId: string): Promise<void> {
 
   const c2 = useChats.getState().chats.find((c) => c.id === chatId);
   if (c2 && !errMsg && useSettings.getState().autoTitle && c2.autoTitle && !c2.temp && c2.messages.filter((m) => m.role === 'assistant').length === 1) {
-    void makeTitle(c2.id);
+    // النموذج المحلي بطيء: عنوان من أول كلمات الرسالة بدل توليد ثانٍ
+    if (am.ep.proto === 'llama') useChats.getState().rename(c2.id, cleanTitle((lastUser?.content || '').slice(0, 60)) || 'محادثة جديدة', true);
+    else void makeTitle(c2.id);
   }
 }
 

@@ -2,6 +2,7 @@ import { fetch as xfetch } from 'expo/fetch';
 import { httpErrorText, netErrorText } from './errors';
 import { buildRequest, modelsRequest, rejectedField, type BuildArgs } from './payload';
 import { LineBuffer, parseEvent, parseFull, parseModelList, sseData } from './parsers';
+import { localModelIds, localStream } from './local';
 import type { Chunk, Endpoint } from './types';
 
 type Args = Omit<BuildArgs, 'stream' | 'drop'> & { signal?: AbortSignal };
@@ -35,6 +36,10 @@ async function post(ep: Endpoint, a: BuildArgs, signal?: AbortSignal) {
 /** بث رد النموذج كشرائح نص/تفكير/استهلاك */
 export async function* chatStream(a: Args): AsyncGenerator<Chunk> {
   const { ep, signal } = a;
+  if (ep.proto === 'llama') {
+    yield* localStream({ ep, model: a.model, messages: a.messages, system: a.system, params: a.params, signal });
+    return;
+  }
   const res = await post(ep, { ...a, stream: true }, signal);
   if (!res.body) {
     // لا يوجد بث على هذه المنصة: نقرأ الرد كاملًا
@@ -71,11 +76,17 @@ export async function* chatStream(a: Args): AsyncGenerator<Chunk> {
 
 /** طلب واحد غير متدفّق (للعناوين التلقائية والاختبار) */
 export async function completeOnce(a: Args): Promise<string> {
+  if (a.ep.proto === 'llama') {
+    let t = '';
+    for await (const ch of localStream({ ep: a.ep, model: a.model, messages: a.messages, system: a.system, params: a.params, signal: a.signal })) if (ch.kind === 'text') t += ch.text;
+    return t;
+  }
   const res = await post(a.ep, { ...a, stream: false }, a.signal);
   return parseFull(a.ep.proto, safeJson(await res.text()));
 }
 
 export async function fetchModels(ep: Endpoint, signal?: AbortSignal): Promise<string[]> {
+  if (ep.proto === 'llama') return localModelIds();
   const r = modelsRequest(ep);
   let res;
   try {

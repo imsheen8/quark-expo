@@ -1,4 +1,4 @@
-export type Proto = 'openai' | 'anthropic' | 'gemini' | 'ollama';
+export type Proto = 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'llama';
 
 export interface ModelEntry {
   id: string;

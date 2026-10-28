@@ -146,7 +146,7 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
   }
 
   return (
-    <View style={{ paddingHorizontal: 12, paddingBottom: 8, paddingTop: 6, backgroundColor: c.bg }}>
+    <View style={{ paddingHorizontal: 12, paddingBottom: 8, paddingTop: 6 }}>
       {slashItems.length > 0 ? (
         <View style={{ backgroundColor: c.surface, borderRadius: 14, borderWidth: 1, borderColor: c.border, marginBottom: 8, overflow: 'hidden' }}>
           <T size={12} color="muted" style={{ padding: 10, paddingBottom: 4 }}>القوالب والشخصيات</T>
@@ -172,7 +172,7 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
         </View>
       ) : null}
 
-      <View style={{ backgroundColor: c.surface, borderRadius: 30, borderWidth: 1, borderColor: c.border, padding: 12, gap: 10 }}>
+      <View style={{ backgroundColor: c.surface, borderRadius: 26, borderWidth: 1, borderColor: c.border, padding: 10, gap: 8 }}>
         {imgs.length + files.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, padding: 4 }}>
             {imgs.map((i) => (
@@ -214,7 +214,7 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
           selectionColor={c.accent + '55'}
           selectionHandleColor={c.accent}
           style={{
-            color: c.text, fontFamily: FONT.regular, fontSize: 16 * sc, maxHeight: 160, minHeight: 48,
+            color: c.text, fontFamily: FONT.regular, fontSize: 16 * sc, maxHeight: 160, minHeight: 44,
             paddingHorizontal: 10, paddingTop: Platform.OS === 'ios' ? 10 : 6, textAlign: 'auto', writingDirection: 'auto' as any,
           }}
         />
@@ -224,8 +224,8 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
             {([['chat', 'محادثة', 'message-circle'], ['agent', 'وكيل', 'zap']] as const).map(([k, lb, ic]) => {
               const on = (k === 'agent') === modes.agent;
               return (
-                <Pressable key={k} onPress={() => { haptic(); setMode('agent', k === 'agent'); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 36, borderRadius: 18, backgroundColor: on ? c.surface3 : 'transparent' }}>
-                  <T size={13.5} weight={on ? 'bold' : 'medium'} color={on ? 'text' : 'muted'}>{lb}</T>
+                <Pressable key={k} onPress={() => { haptic(); setMode('agent', k === 'agent'); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: on ? c.surface3 : 'transparent' }}>
+                  <T size={13} weight={on ? 'bold' : 'medium'} color={on ? 'text' : 'muted'}>{lb}</T>
                   <Icon name={ic} size={15} color={on ? c.text : c.muted} />
                 </Pressable>
               );
@@ -235,7 +235,7 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
           <Pressable
             onPress={busy ? onStop : send}
             disabled={!busy && !canSend}
-            style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: busy || canSend ? c.accent : c.surface3 }}
+            style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: busy || canSend ? c.accent : c.surface3 }}
             accessibilityLabel={busy ? 'إيقاف' : 'إرسال'}
           >
             <Icon name={busy ? 'square' : 'arrow-up'} size={busy ? 16 : 20} color={busy || canSend ? c.onAccent : c.muted} />

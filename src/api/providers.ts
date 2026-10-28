@@ -37,6 +37,7 @@ export const PROTO_LABEL: Record<Proto, string> = {
   anthropic: 'Anthropic',
   gemini: 'Gemini',
   ollama: 'Ollama',
+  llama: 'على الجهاز',
 };
 
 export const DEFAULT_SYSTEM = 'أنت مساعد ذكي ودود. أجب بنفس لغة المستخدم بوضوح وإيجاز، واستخدم التنسيق عند الحاجة.';

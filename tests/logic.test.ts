@@ -20,6 +20,7 @@ import { guessPreset, parseAddr, validateCompose } from '../src/api/mailCore';
 import { fromBag, mergeBags, toBag } from '../src/api/syncCore';
 import { createHash } from 'node:crypto';
 import { passFilter } from '../src/lib/chatFilter';
+import { cleanRepo, fit, hfFileUrl, pickVariant, quantOf, variantsFromFiles } from '../src/api/localCore';
 
 let n = 0;
 const t = (name: string, fn: () => void) => {
@@ -335,6 +336,24 @@ t('تصفية المحادثات', () => {
   assert.equal(passFilter(mk(1, { pinned: true }), 'fav', now), true);
   assert.equal(passFilter(mk(1, { tags: ['a'] }), 'tag:a', now), true);
   assert.equal(passFilter(mk(1, { tags: ['a'] }), 'tag:b', now), false);
+});
+
+t('نماذج محلية: صيغ GGUF والملاءمة', () => {
+  assert.equal(quantOf('Qwen3-1.7B-Q4_K_M.gguf'), 'Q4_K_M');
+  const GB = 1024 ** 3;
+  const files = [
+    { path: 'm-Q4_K_M.gguf', size: 1.0 * GB }, { path: 'm-Q8_0.gguf', size: 1.8 * GB }, { path: 'm-Q2_K.gguf', size: 0.6 * GB },
+    { path: 'mmproj-F16.gguf', size: 0.3 * GB }, { path: 'big-Q4_K_M-00001-of-00002.gguf', size: GB },
+    { path: 'part/x-Q4_K_M-00001-of-00002.gguf', size: GB }, { path: 'part/x-Q4_K_M-00002-of-00002.gguf', size: GB }, { path: 'README.md', size: 1 },
+  ];
+  const v = variantsFromFiles(files);
+  assert.deepEqual(v.map((x) => x.quant).sort(), ['Q2_K', 'Q4_K_M', 'Q4_K_M', 'Q8_0']); // الجزء الناقص مستبعد، mmproj مستبعد
+  assert.equal(pickVariant(v)?.quant, 'Q4_K_M');
+  assert.equal(pickVariant(v, 0.7 * GB)?.quant, 'Q2_K');
+  assert.equal(cleanRepo('https://huggingface.co/unsloth/Qwen3-4B-GGUF?x=1'), 'unsloth/Qwen3-4B-GGUF');
+  assert.equal(hfFileUrl('a/b', 'd/x y.gguf'), 'https://huggingface.co/a/b/resolve/main/d/x%20y.gguf');
+  assert.equal(fit(0.5 * GB, 0.6, 8).level === 'no', false);
+  assert.equal(fit(8 * GB, 14, 4).level, 'no');
 });
 
 console.log(`\n${n} اختبارًا نجح`);

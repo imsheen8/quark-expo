@@ -105,7 +105,7 @@ async function execTool(name: string, a: Record<string, any>, signal: AbortSigna
     case 'plan': st.plan = Array.isArray(a.items) ? a.items : []; return 'سُجّلت الخطة.';
     case 'manage_tasks': return manageTasks(a);
     case 'create_file': {
-      const FS = require('expo-file-system');
+      const FS = require('expo-file-system/legacy');
       const Sharing = require('expo-sharing');
       const fn = String(a.filename).replace(/[^\w.\-]+/g, '_').slice(0, 60) || 'file.txt';
       const uri = (FS.cacheDirectory || FS.documentDirectory) + fn;

@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { hostOf } from '../src/api/providers';
@@ -10,6 +11,7 @@ import { useColors } from '../src/theme';
 
 export default function Models() {
   const c = useColors();
+  const router = useRouter();
   const { endpoints, sel, select, toggleModel, addModel, setModels, updateEndpoint } = useSettings();
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
@@ -40,6 +42,14 @@ export default function Models() {
 
   return (
     <Screen title="النماذج" menu right={<IconButton name="plus" onPress={() => setAdding(true)} label="إضافة" />}>
+      <Pressable onPress={() => router.push('/local')} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, backgroundColor: pressed ? c.surface3 : c.accentSoft })}>
+        <Icon name="smartphone" size={22} color={c.accent} />
+        <View style={{ flex: 1 }}>
+          <T weight="semibold">نماذج على الجهاز (llama.cpp)</T>
+          <T size={12.5} color="text2">نزّل نموذجًا واعمل دون إنترنت</T>
+        </View>
+        <Icon name="chevron-left" size={18} color={c.muted} />
+      </Pressable>
       {endpoints.length === 0 ? (
         <>
           <Empty icon="cpu" title="لا توجد نقاط اتصال" sub="أضف مفتاح API أو خادمًا محليًا لتظهر نماذجك هنا." />
