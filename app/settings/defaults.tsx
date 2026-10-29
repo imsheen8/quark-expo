@@ -64,12 +64,6 @@ export default function Defaults() {
         <ModelSelect label="نموذج الرؤية" value={defs.vision.sel} onChange={(v) => setSec('vision', { sel: v })} empty="تلقائي (نموذج المحادثة)" vision />
         {fbBlock('vision', true)}
       </Card>
-
-      <Card style={{ gap: 8 }}>
-        <T weight="bold">نموذج البحث العميق</T>
-        <T size={12.5} color="muted">ينفّذ التخطيط واستخلاص الملاحظات وكتابة التقرير في «البحث العميق».</T>
-        <ModelSelect label="نموذج البحث العميق" value={defs.research} onChange={(v) => set({ research: v })} empty="نفس نموذج المحادثة" />
-      </Card>
     </Screen>
   );
 }

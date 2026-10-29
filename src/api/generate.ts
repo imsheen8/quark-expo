@@ -10,7 +10,7 @@ import { buildHistory } from './history';
 import { mergeUsage, splitThink } from './parsers';
 import { completeOnce } from './stream';
 import { applyDefaultChatModel, chatModels, completeChain, streamChain, utilModels } from './chains';
-import { agentLoop, fireTaskEvent, fireWebhooks, runApiCall, searchForChat, streamTurn } from './engines';
+import { agentLoop, fireTaskEvent, fireWebhooks, needsResearch, runApiCall, searchForChat, startChatResearch, streamTurn } from './engines';
 import { wrapResult } from './agentCore';
 import { integPrompt, parseApiCall } from './integCore';
 import { useInteg } from '../store/features';
@@ -103,6 +103,14 @@ export async function sendMessage(o: Outgoing): Promise<void> {
   if (isNew) { fireTaskEvent('newchat'); void fireWebhooks('session.created', { chatId: chat.id }); }
   fireTaskEvent('messages');
   void fireWebhooks('chat.message', { chatId: chat.id, text });
+  // وضع البحث العميق: النموذج يقرّر هل الرسالة تحتاج بحثًا أم ردًّا عاديًا
+  if (useSettings.getState().modes.research && text && !o.imgs?.length && !o.files?.length) {
+    const sv = useStream.getState();
+    sv.set({ chatId: chat.id, busy: true, text: '', think: '', secs: 0, status: 'يحدّد هل تحتاج رسالتك إلى بحث…', steps: [] });
+    const need = await needsResearch(text);
+    useStream.getState().reset();
+    if (need) { await startChatResearch(chat.id, text); return; }
+  }
   await generateReply(chat.id);
 }
 

@@ -11,7 +11,6 @@ import { ChatActions } from '../src/components/ChatActions';
 import { Composer, type ComposerValue } from '../src/components/chat/Composer';
 import { MessageView, Thinking, Typing } from '../src/components/chat/Message';
 import { AgentSteps } from '../src/components/chat/Extras';
-import { runResearch } from '../src/api/engines';
 import { Markdown } from '../src/components/chat/Markdown';
 import { ModelPicker } from '../src/components/chat/ModelPicker';
 import { Button, Header, Icon, IconButton, T, haptic } from '../src/components/ui/kit';
@@ -48,7 +47,6 @@ function Welcome() {
 export default function ChatScreen() {
   const c = useColors();
   const ins = useSafeAreaInsets();
-  const router = useRouter();
   const setSidebar = useUi((st) => st.setSidebar);
   const chat = useChats((s) => s.chats.find((x) => x.id === s.currentId));
   const { incog, setIncog, setCurrent } = useChats();
@@ -99,7 +97,6 @@ export default function ChatScreen() {
     // التعديل: تُحفظ النسخة القديمة بردودها ويمكن العودة إليها من سهم النسخ
     const branch = editing && chat ? useChats.getState().branchFrom(chat.id, editing.id) ?? undefined : undefined;
     setEditing(null);
-    if (useSettings.getState().modes.research && v.text.trim()) { void runResearch(v.text.trim()); router.push('/research'); return; }
     void sendMessage({ text: v.text, imgs: v.imgs, files: v.files, branch });
   };
 

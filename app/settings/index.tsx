@@ -23,8 +23,7 @@ export default function SettingsHome() {
         <Row icon="key" title="المفاتيح ونقاط الاتصال" sub={`${eps} نقطة`} onPress={() => r.push('/settings/endpoints')} />
       </Group>
       <Group title="الأدوات الذكية">
-        <Row icon="search" title="البحث العميق" sub="تقارير بمصادر" onPress={() => r.push('/research')} />
-        <Row icon="globe" title="بحث الويب" sub="المحرك والمفاتيح والبدائل" onPress={() => r.push('/settings/web')} />
+        <Row icon="search" title="البحث" sub="بحث الويب والبحث العميق" onPress={() => r.push('/settings/web')} />
         <Row icon="tool" title="وضع الوكيل" sub="الأدوات والموافقات" onPress={() => r.push('/settings/agent')} />
         <Row icon="link" title="التكاملات" sub="خدمات REST وWebhooks" onPress={() => r.push('/settings/integrations')} />
         <Row icon="mail" title="البريد" sub="البوابة والحسابات" onPress={() => r.push('/settings/mail')} />

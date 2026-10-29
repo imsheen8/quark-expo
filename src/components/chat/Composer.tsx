@@ -317,7 +317,7 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
           </View>
           <Group title="الأوضاع">
             <Row icon="globe" title="بحث الويب" sub="يبحث ويضيف مصادر إلى الرد" right={<Switch value={modes.web} onValueChange={(v) => setMode('web', v)} />} />
-            <Row icon="search" title="بحث عميق" sub="تقرير مفصّل بمصادر (الرسالة التالية تصبح موضوع البحث)" right={<Switch value={modes.research} onValueChange={(v) => setMode('research', v)} />} />
+            <Row icon="search" title="بحث عميق" sub="يقرّر النموذج إن كانت رسالتك تحتاج بحثًا، فيكتب تقريرًا بمصادر" right={<Switch value={modes.research} onValueChange={(v) => setMode('research', v)} />} />
             <Row icon="columns" title="مقارنة نماذج" sub={cmpSel ? 'مع ' + shortModel(cmpSel.model) : 'اختر نموذجًا ثانيًا'} right={<Switch value={modes.compare} onValueChange={(v) => (v && !cmpSel ? (setAttach(false), setTimeout(() => setSecond(true), 250)) : setMode('compare', v))} />} onPress={() => { setAttach(false); setTimeout(() => setSecond(true), 250); }} />
           </Group>
           <Group>

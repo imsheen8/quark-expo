@@ -59,6 +59,8 @@ export interface Msg {
   imgs?: ImageRef[];
   files?: FileRef[];
   usage?: Usage;
+  /** رد البحث العميق: معرّف البحث الذي تعرضه البطاقة في المحادثة */
+  researchId?: string;
   /** مصادر الويب المستخدمة في الرد */
   sources?: { n: number; title: string; url: string; host: string }[];
   /** أسماء المهارات المستخدمة في الرد */

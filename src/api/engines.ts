@@ -204,19 +204,50 @@ export async function agentLoop(o: {
 const controllers = new Map<string, AbortController>();
 export const stopResearch = (id: string) => controllers.get(id)?.abort();
 
-export async function runResearch(topic: string): Promise<string> {
+/** هل تحتاج الرسالة بحثًا عميقًا (تقريرًا بمصادر) أم ردًّا عاديًا؟ عند أي فشل تُعامل كرد عادي */
+export async function needsResearch(text: string): Promise<boolean> {
+  const am = researchAM();
+  if (!am) return false;
+  try {
+    const out = await ask(
+      'حدّد نوع رسالة المستخدم التالية. أجب بكلمة واحدة فقط:\n' +
+      'research = إن كانت تطلب بحثًا أو تقريرًا أو دراسة أو جمع معلومات ومصادر عن موضوع يحتاج بحثًا في الويب وقراءة عدة صفحات.\n' +
+      'chat = إن كانت تحية أو سؤالًا بسيطًا أو حديثًا عاديًا أو طلب كتابة/ترجمة/تلخيص/شرح/برمجة أو أي شيء يُجاب عنه مباشرة دون بحث.\n\n' +
+      'الرسالة:\n"""\n' + text.slice(0, 1500) + '\n"""',
+      '', undefined, am, 300,
+    );
+    const a = out.toLowerCase();
+    return a.includes('research') && !/^\s*chat/.test(a);
+  } catch (e) {
+    logErr('research', e);
+    return false;
+  }
+}
+
+/** يبدأ بحثًا عميقًا داخل المحادثة: تظهر بطاقة البحث رسالةً من المساعد */
+export async function startChatResearch(chatId: string, topic: string): Promise<void> {
+  const msgId = uid();
+  const rid = await runResearch(topic, { chatId, msgId });
+  useChats.getState().addMessage(chatId, { id: msgId, role: 'assistant', content: 'جارٍ إجراء بحث عميق عن: ' + topic, ts: Date.now(), researchId: rid });
+}
+
+export async function runResearch(topic: string, link?: { chatId: string; msgId: string }): Promise<string> {
   const am = researchAM();
   const R = useResearch.getState();
   const r = R.add(topic);
-  if (!am) { R.patch(r.id, { status: 'error', error: 'لا يوجد نموذج محدد.' }); return r.id; }
+  const sync = (p: Partial<import('./types').Msg>) => { if (link) useChats.getState().updateMessage(link.chatId, link.msgId, p); };
+  if (!am) { R.patch(r.id, { status: 'error', error: 'لا يوجد نموذج محدد.' }); sync({ content: 'تعذّر البحث: لا يوجد نموذج محدد.' }); return r.id; }
   const ctl = new AbortController();
   controllers.set(r.id, ctl);
   const signal = ctl.signal;
   const conf = useSettings.getState().search;
+  const deep = useSettings.getState().deep;
+  const nQ = Math.max(2, Math.min(8, deep.questions || 4));
+  const nPages = Math.max(1, Math.min(5, deep.pages || 3));
   void (async () => {
     try {
       R.patch(r.id, { phase: 'تخطيط الأسئلة' });
-      const plan = parsePlan(await ask(PLAN_PROMPT(topic, 4), '', signal, am, 600), topic, 5);
+      const plan = parsePlan(await ask(PLAN_PROMPT(topic, nQ), '', signal, am, 600), topic, nQ);
       R.patch(r.id, { questions: plan.questions });
       const sources: Source[] = [];
       const notes: { q: string; items: { n: number; text: string }[] }[] = [];
@@ -225,7 +256,7 @@ export async function runResearch(topic: string): Promise<string> {
         R.patch(r.id, { phase: `بحث ${i + 1}/${plan.questions.length}: ${q}` });
         const { rows } = await webSearch(conf, q, signal).catch(() => ({ rows: [] as any[] }));
         const items: { n: number; text: string }[] = [];
-        for (const row of rows.slice(0, 3)) {
+        for (const row of rows.slice(0, nPages)) {
           try {
             const pg = await fetchPage(row.url, 5000, signal);
             const note = await ask(EXTRACT_PROMPT(q, pg.text), '', signal, am, 500);
@@ -240,10 +271,11 @@ export async function runResearch(topic: string): Promise<string> {
       R.patch(r.id, { phase: 'كتابة التقرير' });
       const report = await ask(buildReportPrompt(topic, notes), '', signal, am, 4000);
       R.patch(r.id, { status: 'done', phase: 'اكتمل', report: report + referencesMd(sources) });
+      sync({ content: report + referencesMd(sources), sources: sources.map((x) => ({ n: x.n, title: x.title, url: x.url, host: x.host })) });
       fireTaskEvent('research');
     } catch (e) {
-      if (signal.aborted) R.patch(r.id, { status: 'stopped', phase: 'أُوقف' });
-      else { logErr('research', e); R.patch(r.id, { status: 'error', error: e instanceof Error ? e.message : String(e) }); }
+      if (signal.aborted) { R.patch(r.id, { status: 'stopped', phase: 'أُوقف' }); sync({ content: 'أُوقف البحث العميق عن: ' + topic }); }
+      else { logErr('research', e); const em = e instanceof Error ? e.message : String(e); R.patch(r.id, { status: 'error', error: em }); sync({ content: 'تعذّر إكمال البحث العميق: ' + em }); }
     } finally { controllers.delete(r.id); }
   })();
   return r.id;

@@ -13,6 +13,8 @@ export interface Profile {
   name: string;
   nick: string;
   prefs: string;
+  /** مسار صورة الملف الشخصي على الجهاز */
+  avatar?: string;
 }
 
 export interface SettingsState {
@@ -37,6 +39,8 @@ export interface SettingsState {
   haptics: boolean;
   onboarded: boolean;
   search: SearchConf;
+  /** إعدادات البحث العميق */
+  deep: { questions: number; pages: number };
   agent: AgentConf;
   /** بوابة بايثون للبريد */
   gw: { url: string; token: string };
@@ -86,6 +90,7 @@ export const useSettings = create<SettingsState>()(
       haptics: true,
       onboarded: false,
       search: DEFAULT_SEARCH,
+      deep: { questions: 4, pages: 3 },
       agent: defaultAgent(),
       gw: { url: '', token: '' },
       modes: { web: false, agent: false, research: false, compare: false },
@@ -171,6 +176,7 @@ export const useSettings = create<SettingsState>()(
         ...cur,
         ...saved,
         search: { ...cur.search, ...(saved?.search || {}) },
+        deep: { ...cur.deep, ...(saved?.deep || {}) },
         agent: { ...cur.agent, ...(saved?.agent || {}), tools: { ...cur.agent.tools, ...(saved?.agent?.tools || {}) } },
         gw: { ...cur.gw, ...(saved?.gw || {}) },
         modes: { ...cur.modes, ...(saved?.modes || {}) },

@@ -9,6 +9,7 @@ import { useColors } from '../../theme';
 import { Icon, IconButton, T, haptic } from '../ui/kit';
 import { Markdown } from './Markdown';
 import { AgentSteps, CompareView, SourceChips } from './Extras';
+import { ResearchCard } from './ResearchCard';
 
 export function Thinking({ text, secs, live }: { text: string; secs: number; live?: boolean }) {
   const c = useColors();
@@ -99,6 +100,14 @@ export function MessageView({ msg, isLast, onRegenerate, onEdit, onDelete, onIma
           {onEdit ? <IconButton name="edit-2" size={15} onPress={() => onEdit(msg)} label="تعديل" style={{ width: 32, height: 32 }} /> : null}
           {onDelete ? <IconButton name="trash-2" size={15} onPress={() => onDelete(msg)} label="حذف" style={{ width: 32, height: 32 }} /> : null}
         </View>
+      </View>
+    );
+  }
+
+  if (msg.researchId) {
+    return (
+      <View style={{ paddingHorizontal: 16, gap: 8 }}>
+        <ResearchCard id={msg.researchId} onDelete={onDelete ? () => onDelete(msg) : undefined} />
       </View>
     );
   }

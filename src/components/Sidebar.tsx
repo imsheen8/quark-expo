@@ -1,7 +1,7 @@
 import { applyDefaultChatModel } from '../api/chains';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, Platform, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Animated, Dimensions, Image, Platform, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FILTERS, passFilter } from '../lib/chatFilter';
 import { useSettings } from '../store/settings';
@@ -36,6 +36,7 @@ export function Sidebar() {
   const [actions, setActions] = useState<string | null>(null);
   const filter = useSettings((st) => st.chatFilter);
   const patch = useSettings((st) => st.patch);
+  const avatar = useSettings((st) => st.profile.avatar);
   const tags = useTags((st) => st.items);
   const [menu, setMenu] = useState<null | 'main' | 'tags'>(null);
   const [showAll, setShowAll] = useState(false);
@@ -130,8 +131,8 @@ export function Sidebar() {
           )}
         />
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, paddingTop: 8 }}>
-          <Pressable onPress={() => go('/settings')} accessibilityLabel="الإعدادات" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: c.surface2, alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="user" size={20} color={c.text2} />
+          <Pressable onPress={() => go('/settings')} accessibilityLabel="الإعدادات" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: c.surface2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            {avatar ? <Image source={{ uri: avatar }} style={{ width: 44, height: 44 }} /> : <Icon name="user" size={20} color={c.text2} />}
           </Pressable>
           <View style={{ flex: 1 }} />
           <Pressable onPress={newChat} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: c.accent, borderRadius: 24, height: 46, paddingHorizontal: 20 }}>
