@@ -127,7 +127,7 @@ export default function Library() {
           <Button small kind="soft" icon="tag" title="وسم" disabled={!sel.size} onPress={() => { if (curKind === 'skill') return setPicker({ ids: [...sel], target: 'skill' }); const kinds = new Set(items.filter((x) => sel.has(x.id)).map((x) => x.kind)); if (kinds.size !== 1) return toast('حدّد عناصر من نوع واحد (شخصيات أو قوالب) لإضافة وسم'); setPicker({ ids: [...sel], target: [...kinds][0] }); }} />
           {curKind !== 'skill' ? <Button small kind="soft" icon="star" title="مفضلة" disabled={!sel.size} onPress={() => { const on = items.filter((x) => sel.has(x.id)).some((x) => !x.fav); sel.forEach((id) => update(id, { fav: on })); toast(on ? 'أُضيفت للمفضلة' : 'أُزيلت من المفضلة'); }} /> : null}
           <Button small kind="danger" icon="trash-2" title="حذف" disabled={!sel.size} onPress={() => setConfirmDel(true)} />
-          <T size={12.5} color="muted">{sel.size ? sel.size + ' محدد' : ''}</T>
+          {sel.size ? <T size={12.5} color="muted">{sel.size + ' محدد'}</T> : null}
         </View>
       ) : null}
       <View style={{ marginHorizontal: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>

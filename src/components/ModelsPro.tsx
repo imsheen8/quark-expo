@@ -147,7 +147,7 @@ export function ModelsPro() {
           <Button small kind="soft" icon="star" title="مفضلة" disabled={!picked.length} onPress={() => setFav(picked, !picked.every((k) => fc.fav.has(k)))} />
           <Button small kind="soft" icon="clock" title="اختبار" disabled={!picked.length} onPress={() => { toast(`يختبر ${pickedItems.length} نموذجًا…`); void testMany(pickedItems).then((r) => toast(`اكتمل الاختبار — ناجح: ${r.ok} · فاشل: ${r.bad}`)); }} />
           <Button small kind="danger" icon="trash-2" title="حذف" disabled={!picked.length} onPress={() => setDel(picked)} />
-          <T size={12.5} color="muted">{picked.length ? picked.length + ' محدد' : ''}</T>
+          {picked.length ? <T size={12.5} color="muted">{picked.length + ' محدد'}</T> : null}
         </View>
       ) : null}
       <View style={{ flexDirection: 'row', gap: 4, marginHorizontal: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>

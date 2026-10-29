@@ -187,7 +187,7 @@ export default function LocalModels() {
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
           <Button small kind="soft" title={allPicked ? 'إلغاء التحديد' : 'تحديد الكل'} onPress={() => setPicked(allPicked ? [] : mineView.map((m) => m.id))} />
           <Button small kind="danger" icon="trash-2" title="حذف" disabled={!picked.length} onPress={() => setDel(picked)} />
-          <T size={12.5} color="muted">{picked.length ? picked.length + ' محدد' : ''}</T>
+          {picked.length ? <T size={12.5} color="muted">{picked.length + ' محدد'}</T> : null}
         </View>
       ) : null}
 

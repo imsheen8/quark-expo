@@ -80,7 +80,7 @@ export default function ChatsPage() {
           <Button small kind="soft" icon="tag" title="وسم" disabled={!sel.size} onPress={() => setPicker([...sel])} />
           <Button small kind="soft" icon="star" title="مفضلة" disabled={!sel.size} onPress={() => { const on = chats.filter((x) => sel.has(x.id)).some((x) => !x.pinned); useChats.setState((st) => ({ chats: st.chats.map((x) => (sel.has(x.id) ? { ...x, pinned: on } : x)) })); toast(on ? 'أُضيفت للمفضلة' : 'أُزيلت من المفضلة'); }} />
           <Button small kind="danger" icon="trash-2" title="حذف" disabled={!sel.size} onPress={() => setConfirmDel(true)} />
-          <T size={12.5} color="muted">{sel.size ? sel.size + ' محدد' : ''}</T>
+          {sel.size ? <T size={12.5} color="muted">{sel.size + ' محدد'}</T> : null}
         </View>
       ) : null}
       <View style={{ flexDirection: 'row', gap: 4, marginHorizontal: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>

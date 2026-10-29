@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Chip, Dialog, Empty, Field, Header, Icon, IconButton, Sheet, T, haptic } from '../src/components/ui/kit';
@@ -16,11 +16,12 @@ export default function Logs() {
   const items = useLogs((s) => s.items);
   const clear = useLogs((s) => s.clear);
   const [q, setQ] = useState('');
-  const [order, setOrder] = useState<LogOrder>('new');
+  const [order, setOrder] = useState<LogOrder>('old');
   const [errs, setErrs] = useState(false);
   const [filt, setFilt] = useState(false);
   const [ask, setAsk] = useState(false);
   const [tick, setTick] = useState(0);
+  const listRef = useRef<FlatList<LogView>>(null);
   const { rows, badRegex } = useMemo(() => viewLogs(items, q, order, errs), [items, q, order, errs, tick]);
 
   const share = () => {
@@ -35,7 +36,7 @@ export default function Logs() {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: badRegex ? c.danger : c.border, borderRadius: 16, paddingStart: 14, paddingEnd: 4 }}>
           <Field style={{ flex: 1 }} inputStyle={{ borderWidth: 0, backgroundColor: 'transparent' }} placeholder="تصفية (regex)" value={q} onChangeText={setQ} ltr autoCapitalize="none" autoCorrect={false} />
-          <IconButton name="sliders" active={order !== 'new' || errs} onPress={() => setFilt(true)} label="خيارات التصفية" />
+          <IconButton name="sliders" active={order !== 'old' || errs} onPress={() => setFilt(true)} label="خيارات التصفية" />
         </View>
         <Pressable onPress={() => { haptic(); share(); }} accessibilityLabel="مشاركة" style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: c.surface2, alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="share" size={21} color={c.text} />
@@ -43,7 +44,9 @@ export default function Logs() {
       </View>
       {badRegex ? <T size={11.5} color="danger" style={{ paddingHorizontal: 18, paddingBottom: 4 }}>تعبير غير صالح — يُبحث كنص عادي.</T> : null}
       <FlatList
+        ref={listRef}
         data={rows}
+        onContentSizeChange={() => { if (order === 'old') listRef.current?.scrollToEnd({ animated: false }); }}
         keyExtractor={(r) => String(r.e.id)}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: ins.bottom + 24, gap: 16, flexGrow: 1 }}
         ListEmptyComponent={<Empty icon="file-text" title={items.length ? 'لا نتائج مطابقة' : 'السجل فارغ'} sub={items.length ? undefined : 'تظهر هنا أخطاء الاتصال والتوليد والصوت والبحث عند حدوثها.'} />}
