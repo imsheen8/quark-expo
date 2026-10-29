@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { gwHealth, mailTest } from '../../src/api/gateway';
+import { gwHealth, mailTest, nativeMail } from '../../src/api/gateway';
 import { guessPreset, isEmail, MAIL_PRESETS, type MailAccount } from '../../src/api/mailCore';
 import { Button, Field, Group, IconButton, Row, Screen, Sheet, T } from '../../src/components/ui/kit';
 import { toast } from '../../src/store/data';
@@ -39,14 +39,20 @@ export default function MailSettings() {
   };
   return (
     <Screen title="البريد" right={<IconButton name="plus" label="حساب" onPress={() => setEd(blank())} />}>
-      <T size={13} color="text2">الهاتف لا يفتح اتصال IMAP مباشرة، لذلك يمرّ البريد عبر بوابة QUARK بلغة بايثون. شغّلها على حاسوبك أو داخل Termux: بعد فك مجلد التطبيق الأصلي نفّذ python3 serve.py ثم ضع عنوانها هنا (مثل http://192.168.1.5:8080 أو http://127.0.0.1:8080 داخل Termux). إن كان الاتصال من جهاز آخر عيّن QUARK_GW_TOKEN وأدخله هنا. بالنسبة لـ Gmail استخدم «كلمة مرور التطبيق».</T>
-      <Group title="البوابة">
-        <View style={{ padding: 12, gap: 10 }}>
-          <Field label="عنوان البوابة" ltr placeholder="http://127.0.0.1:8080" autoCapitalize="none" value={gw.url} onChangeText={(t) => patch({ gw: { ...gw, url: t } })} />
-          <Field label="الرمز (اختياري)" ltr secureTextEntry value={gw.token} onChangeText={(t) => patch({ gw: { ...gw, token: t } })} />
-          <Button title="اختبار البوابة" kind="soft" onPress={checkGw} loading={busy} />
-        </View>
-      </Group>
+      {nativeMail() ? (
+        <T size={13} color="text2">البريد مدمج في التطبيق ويتصل بخادم بريدك مباشرة (IMAP/SMTP) دون أي بوابة أو خادم وسيط. أضف حسابك أدناه. بالنسبة لـ Gmail وiCloud وYahoo استخدم «كلمة مرور التطبيق» لا كلمة المرور العادية.</T>
+      ) : (
+        <>
+          <T size={13} color="text2">هذه النسخة لا تحوي وحدة البريد المدمجة (تعمل على نسخة أندرويد المبنية بـ APK)، لذلك يمرّ البريد عبر بوابة QUARK خارجية. ضع عنوانها هنا، ورمزها إن وُجد. بالنسبة لـ Gmail استخدم «كلمة مرور التطبيق».</T>
+          <Group title="البوابة">
+            <View style={{ padding: 12, gap: 10 }}>
+              <Field label="عنوان البوابة" ltr placeholder="http://127.0.0.1:8080" autoCapitalize="none" value={gw.url} onChangeText={(t) => patch({ gw: { ...gw, url: t } })} />
+              <Field label="الرمز (اختياري)" ltr secureTextEntry value={gw.token} onChangeText={(t) => patch({ gw: { ...gw, token: t } })} />
+              <Button title="اختبار البوابة" kind="soft" onPress={checkGw} loading={busy} />
+            </View>
+          </Group>
+        </>
+      )}
       <Group title="الحسابات">
         {accounts.map((a) => <Row key={a.id} icon="mail" title={a.label} sub={a.email} onPress={() => setEd(a)} />)}
         <Row icon="plus" title="إضافة حساب" onPress={() => setEd(blank())} />

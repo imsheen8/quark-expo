@@ -80,7 +80,7 @@ export default function MailScreen() {
 
   if (!gwConfigured() || !acct) return (
     <Screen title="البريد" menu>
-      <Empty icon="mail" title="البريد غير مُعدّ" sub="يحتاج بوابة QUARK (بايثون) وحساب IMAP/SMTP" />
+      <Empty icon="mail" title="البريد غير مُعدّ" sub="أضف حساب بريد IMAP/SMTP من الإعدادات" />
       <Button title="إعداد البريد" onPress={() => r.push('/settings/mail')} />
     </Screen>
   );

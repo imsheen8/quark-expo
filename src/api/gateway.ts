@@ -1,5 +1,7 @@
-/** عميل بوابة بايثون (البريد): POST {url}/api/gw/mail/<op> برأس x-quark-token. */
+/** البريد: على أندرويد يعمل داخل التطبيق عبر الوحدة الأصلية QuarkMail (IMAP/SMTP) دون أي خادم.
+    وإن لم تتوفر الوحدة (iOS/ويب/Expo Go) يُستخدم بديلًا عميل بوابة بايثون: POST {url}/api/gw/mail/<op> برأس x-quark-token. */
 import { fetch as xfetch } from 'expo/fetch';
+import { NativeModules } from 'react-native';
 import { useSettings } from '../store/settings';
 import type { MailAccount, MailFull, MailHead } from './mailCore';
 
@@ -18,9 +20,20 @@ const acctBody = (a: MailAccount) => ({
   display: a.label,
 });
 
-export const gwConfigured = () => !!useSettings.getState().gw.url.trim();
+const nativeMod = (NativeModules as { QuarkMail?: { call: (path: string, body: string) => Promise<string> } }).QuarkMail;
+/** هل البريد المدمج (الأصلي) متاح؟ */
+export const nativeMail = () => !!nativeMod;
+export const gwConfigured = () => !!nativeMod || !!useSettings.getState().gw.url.trim();
 
 async function call<T = any>(path: string, body?: unknown, method = 'POST', signal?: AbortSignal): Promise<T> {
+  if (nativeMod) {
+    try {
+      const txt = await nativeMod.call(path, JSON.stringify(body ?? {}));
+      return JSON.parse(txt || '{}') as T;
+    } catch (e) {
+      throw new Error(e instanceof Error && e.message ? e.message : 'تعذّر تنفيذ عملية البريد');
+    }
+  }
   const { url, token } = useSettings.getState().gw;
   if (!url.trim()) throw new Error('لم تُضبط بوابة البريد. أدخل عنوانها في «إعدادات ← البريد».');
   const base = url.trim().replace(/\/+$/, '');
