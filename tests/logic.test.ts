@@ -361,7 +361,7 @@ t('نماذج محلية: صيغ GGUF والملاءمة', () => {
 });
 
 t('المهارات: SKILL.md ذهابًا وإيابًا', () => {
-  const sk = skFromText(skEmit({ name: 'اسم: بنقطتين', description: 'وصف', when: 'عند الحاجة', category: 'عام', tags: ['أ', 'ب'], status: 'draft', body: '1. خطوة أولى\n2. خطوة ثانية' }));
+  const sk = skFromText(skEmit({ name: 'اسم: بنقطتين', description: 'وصف', when: 'عند الحاجة', tags: ['أ', 'ب'], status: 'draft', body: '1. خطوة أولى\n2. خطوة ثانية' }));
   assert.equal(sk.name, 'اسم: بنقطتين');
   assert.deepEqual(sk.tags, ['أ', 'ب']);
   assert.equal(sk.status, 'draft');

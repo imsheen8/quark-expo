@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, View } from 'react-native';
+import { FlatList, Pressable, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { stopGeneration } from '../src/api/generate';
 import { ChatActions } from '../src/components/ChatActions';
 import { MenuIcon } from '../src/components/ui/MenuIcon';
-import { TagDot, TagEditor, TagPicker } from '../src/components/TagDialogs';
-import { Button, Dialog, Field, Icon, IconButton, T, haptic } from '../src/components/ui/kit';
+import { TagDot, TagEditor, TagLabels, TagPicker } from '../src/components/TagDialogs';
+import { Button, Dialog, Icon, IconButton, T, haptic, Empty } from '../src/components/ui/kit';
 import { deleteImages } from '../src/lib/images';
 import { useChats, useStream } from '../src/store/chats';
 import { toast, useUi } from '../src/store/data';
@@ -51,7 +51,7 @@ export default function ChatsPage() {
   };
   const allSelected = view.length > 0 && view.every((x) => sel.has(x.id));
   const tabBtn = (k: string, label: string, n: number) => (
-    <Pressable key={k} onPress={() => setTab(k)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, height: 40, borderRadius: 20, backgroundColor: tab === k ? c.accentSoft : c.surface2 }}>
+    <Pressable key={k} onPress={() => { haptic(); setTab(k); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 42, borderBottomWidth: 2.5, borderBottomColor: tab === k ? c.accent : 'transparent', marginBottom: -1 }}>
       <T size={14} weight="medium" color={tab === k ? 'accent' : 'text2'}>{label}</T>
       <T size={12} color="muted">{n}</T>
     </Pressable>
@@ -69,19 +69,21 @@ export default function ChatsPage() {
         <IconButton name="plus-circle" label="وسم جديد" onPress={() => setEditor({})} />
       </View>
       {searching ? (
-        <View style={{ marginHorizontal: 16, marginBottom: 8 }}>
-          <Field placeholder="ابحث في المحادثات…" value={q} onChangeText={setQ} autoFocus />
+        <View style={{ marginHorizontal: 16, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1.5, borderBottomColor: c.accent, height: 44 }}>
+          <Icon name="search" size={18} color={c.accent} />
+          <TextInput cursorColor={c.accent} selectionColor={c.accent + '55'} selectionHandleColor={c.accent} autoFocus value={q} onChangeText={setQ} placeholder="بحث" placeholderTextColor={c.muted} style={{ flex: 1, color: c.text, fontSize: 15, textAlign: 'auto' }} />
         </View>
       ) : null}
       {multi ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
           <Button small kind="soft" title={allSelected ? 'إلغاء التحديد' : 'تحديد الكل'} onPress={() => setSel(allSelected ? new Set() : new Set(view.map((x) => x.id)))} />
           <Button small kind="soft" icon="tag" title="وسم" disabled={!sel.size} onPress={() => setPicker([...sel])} />
+          <Button small kind="soft" icon="star" title="مفضلة" disabled={!sel.size} onPress={() => { const on = chats.filter((x) => sel.has(x.id)).some((x) => !x.pinned); useChats.setState((st) => ({ chats: st.chats.map((x) => (sel.has(x.id) ? { ...x, pinned: on } : x)) })); toast(on ? 'أُضيفت للمفضلة' : 'أُزيلت من المفضلة'); }} />
           <Button small kind="danger" icon="trash-2" title="حذف" disabled={!sel.size} onPress={() => setConfirmDel(true)} />
           <T size={12.5} color="muted">{sel.size ? sel.size + ' محدد' : ''}</T>
         </View>
       ) : null}
-      <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 10 }}>
+      <View style={{ flexDirection: 'row', gap: 4, marginHorizontal: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>
         {tabBtn('all', 'الكل', all.length)}
         {tabBtn('fav', 'المفضلة', all.filter((x) => x.pinned).length)}
         {curTag ? tabBtn(tab, curTag.name, all.filter((x) => x.tags?.includes(curTag.id)).length) : null}
@@ -90,7 +92,12 @@ export default function ChatsPage() {
         data={view}
         keyExtractor={(m) => m.id}
         contentContainerStyle={{ padding: 16, paddingTop: 4, gap: 12 }}
-        ListEmptyComponent={<T size={14} color="muted" style={{ textAlign: 'center', padding: 40 }}>{q ? 'لا نتائج مطابقة' : !all.length ? 'لا توجد محادثات بعد.\nابدأ محادثة جديدة من القائمة.' : tab === 'fav' ? 'لا توجد محادثات مفضلة.' : 'لا توجد محادثات بهذا الوسم.\nأضف الوسم من قائمة ⋮ في أي محادثة.'}</T>}
+        ListEmptyComponent={
+          q ? <Empty icon="search" title="لا نتائج مطابقة" />
+          : !all.length ? <Empty icon="message-circle" title="لا توجد محادثات بعد" sub="ابدأ محادثة جديدة من القائمة." />
+          : tab === 'fav' ? <Empty icon="star" title="لا توجد محادثات مفضلة" sub="أضف محادثة للمفضلة من قائمة ⋮ على البطاقة." />
+          : <Empty icon="tag" title="لا توجد محادثات بهذا الوسم" sub="أضف الوسم من قائمة ⋮ في أي محادثة." />
+        }
         renderItem={({ item }) => {
           const last = item.messages[item.messages.length - 1];
           const prev = (last?.content || '').replace(/\s+/g, ' ').trim().slice(0, 160) || 'محادثة فارغة';
@@ -100,22 +107,16 @@ export default function ChatsPage() {
             <Pressable onPress={() => (multi ? toggle(item.id) : open(item.id))} onLongPress={() => { if (!multi) { setMulti(true); setSel(new Set([item.id])); } }} style={{ backgroundColor: c.surface, borderRadius: 18, borderWidth: 1.5, borderColor: on ? c.accent : c.border, padding: 14, gap: 8 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 {multi ? <Icon name={on ? 'check-circle' : 'circle'} size={22} color={on ? c.accent : c.muted} /> : null}
-                <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {tg.slice(0, 3).map((t) => (
-                    <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: c.surface2, borderRadius: 10, paddingHorizontal: 8, height: 24 }}>
-                      <TagDot color={t.color} size={8} />
-                      <T size={11.5} color="text2">{t.name}</T>
-                    </View>
-                  ))}
-                  {tg.length > 3 ? <T size={11.5} color="muted">+{tg.length - 3}</T> : null}
-                </View>
+                <T size={16} weight="semibold" numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, minWidth: 0 }}>{item.title}</T>
                 {item.pinned ? <Icon name="star" size={17} color={c.accent} /> : null}
                 {!multi ? <IconButton name="more-vertical" size={19} label="المزيد" onPress={() => setActions(item.id)} style={{ width: 34, height: 34 }} /> : null}
               </View>
-              <T size={16} weight="semibold" numberOfLines={1}>{item.title}</T>
               <T size={13} color="text2" numberOfLines={2}>{prev}</T>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <T size={12} color="muted" style={{ flex: 1 }}>{item.messages.length} رسالة · {new Date(item.updated).toLocaleDateString('ar', { day: 'numeric', month: 'short' })}</T>
+                <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 2 }}>
+                  <T size={12} color="muted">{item.messages.length} رسالة · {new Date(item.updated).toLocaleDateString('ar', { day: 'numeric', month: 'short' })}</T>
+                  <TagLabels tags={tg} />
+                </View>
                 {!multi ? <Button small kind="soft" title="فتح" onPress={() => open(item.id)} /> : null}
               </View>
             </Pressable>

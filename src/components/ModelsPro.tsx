@@ -66,7 +66,7 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
     useSettings.getState().select(it.ep.id, it.m.id);
     toast('تم اختيار النموذج: ' + shortModel(it.m.id));
   };
-  const goParams = (it: ModelItem) => { useSettings.getState().select(it.ep.id, it.m.id); router.push('/settings/params'); };
+  const goParams = (it: ModelItem) => { useSettings.getState().select(it.ep.id, it.m.id); router.push({ pathname: '/settings/personalize', params: { tab: 'params' } }); };
   const remove = (keys: string[]) => {
     const local = all.filter((i) => keys.includes(i.key) && i.ep.proto === 'llama');
     const ok = keys.filter((k) => !local.some((i) => i.key === k));

@@ -9,7 +9,6 @@ export default function Profile() {
       <T size={13} color="muted">تُرسل هذه المعلومات للنموذج ضمن التعليمات ليخاطبك بالطريقة التي تفضّلها. تبقى على جهازك.</T>
       <Field label="الاسم" value={profile.name} onChangeText={(t) => set({ name: t })} autoCapitalize="words" />
       <Field label="اللقب / الاسم المفضّل" value={profile.nick} onChangeText={(t) => set({ nick: t })} />
-      <Field label="تفضيلات الردود" multiline value={profile.prefs} onChangeText={(t) => set({ prefs: t })} placeholder="مثال: أجب بإيجاز، واستخدم أمثلة برمجية بلغة Python." />
     </Screen>
   );
 }

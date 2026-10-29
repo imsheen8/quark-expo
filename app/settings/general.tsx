@@ -1,16 +1,11 @@
 import { View } from 'react-native';
-import { DEFAULT_SYSTEM } from '../../src/api/providers';
-import { Button, Chip, Field, Group, Row, Screen, Switch, T } from '../../src/components/ui/kit';
+import { Chip, Field, Group, Row, Screen, Switch, T } from '../../src/components/ui/kit';
 import { useSettings } from '../../src/store/settings';
 
 export default function General() {
   const s = useSettings();
   return (
     <Screen title="عام">
-      <View style={{ gap: 8 }}>
-        <Field label="موجّه النظام (System Prompt)" multiline value={s.systemPrompt} onChangeText={(t) => s.patch({ systemPrompt: t })} inputStyle={{ minHeight: 120 }} />
-        <Button title="استعادة الافتراضي" kind="ghost" small onPress={() => s.patch({ systemPrompt: DEFAULT_SYSTEM })} style={{ alignSelf: 'flex-start' }} />
-      </View>
       <Group>
         <Row icon="type" title="عنوان تلقائي للمحادثات" sub="يولّد النموذج عنوانًا بعد أول رد" chevron={false} right={<Switch value={s.autoTitle} onValueChange={(v) => s.patch({ autoTitle: v })} />} />
         <Row icon="smartphone" title="اهتزاز خفيف" chevron={false} right={<Switch value={s.haptics} onValueChange={(v) => s.patch({ haptics: v })} />} />

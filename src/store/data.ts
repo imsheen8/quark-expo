@@ -2,17 +2,18 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LibItem, MemoryItem, Skill, UsageRecord } from '../api/types';
 import { seedSkills } from '../api/skillsCore';
+import { SEED_LIB_TAGS } from '../lib/seedTags';
 import { uid } from '../lib/util';
 import { persistStorage } from './storage';
 
 const SEED: LibItem[] = [
-  { id: 't1', kind: 'template', name: 'اشرح لي ببساطة', text: 'اشرح لي {{الموضوع}} بطريقة بسيطة جدًا كأنني مبتدئ، مع مثال من الحياة اليومية.', ts: 1700000004000 },
-  { id: 't2', kind: 'template', name: 'لخّص النص', text: 'لخّص النص التالي في نقاط قصيرة وواضحة مع إبراز الفكرة الرئيسية:\n', ts: 1700000003000 },
-  { id: 't3', kind: 'template', name: 'صحّح لغويًا', text: 'صحّح الأخطاء الإملائية والنحوية في النص التالي دون تغيير المعنى، ثم اذكر التعديلات:\n', ts: 1700000002000 },
-  { id: 't4', kind: 'template', name: 'ترجمة احترافية', text: 'ترجم النص التالي ترجمة دقيقة وطبيعية إلى {{اللغة|العربية}} مع الحفاظ على الأسلوب:\n{{النص}}', ts: 1700000001000 },
-  { id: 'p1', kind: 'persona', name: 'معلّم صبور', text: 'أنت معلّم صبور ولطيف. اشرح خطوة بخطوة، استخدم أمثلة بسيطة، واسأل المستخدم للتأكد من فهمه.', ts: 1700000003500 },
-  { id: 'p2', kind: 'persona', name: 'مبرمج خبير', text: 'أنت مهندس برمجيات خبير. قدّم حلولًا عملية وكودًا نظيفًا مع شرح مختصر لأفضل الممارسات.', ts: 1700000002500 },
-  { id: 'p3', kind: 'persona', name: 'كاتب مبدع', text: 'أنت كاتب مبدع بأسلوب أدبي راقٍ. استخدم لغة غنية وصورًا بلاغية وحافظ على الإيقاع.', ts: 1700000001500 },
+  { id: 't1', kind: 'template', name: 'اشرح لي ببساطة', text: 'اشرح لي {{الموضوع}} بطريقة بسيطة جدًا كأنني مبتدئ، مع مثال من الحياة اليومية.', tags: ['tt_edu'], ts: 1700000004000 },
+  { id: 't2', kind: 'template', name: 'لخّص النص', text: 'لخّص النص التالي في نقاط قصيرة وواضحة مع إبراز الفكرة الرئيسية:\n', tags: ['tt_sum'], ts: 1700000003000 },
+  { id: 't3', kind: 'template', name: 'صحّح لغويًا', text: 'صحّح الأخطاء الإملائية والنحوية في النص التالي دون تغيير المعنى، ثم اذكر التعديلات:\n', tags: ['tt_lang'], ts: 1700000002000 },
+  { id: 't4', kind: 'template', name: 'ترجمة احترافية', text: 'ترجم النص التالي ترجمة دقيقة وطبيعية إلى {{اللغة|العربية}} مع الحفاظ على الأسلوب:\n{{النص}}', tags: ['tt_lang'], ts: 1700000001000 },
+  { id: 'p1', kind: 'persona', name: 'معلّم صبور', text: 'أنت معلّم صبور ولطيف. اشرح خطوة بخطوة، استخدم أمثلة بسيطة، واسأل المستخدم للتأكد من فهمه.', tags: ['pt_edu'], ts: 1700000003500 },
+  { id: 'p2', kind: 'persona', name: 'مبرمج خبير', text: 'أنت مهندس برمجيات خبير. قدّم حلولًا عملية وكودًا نظيفًا مع شرح مختصر لأفضل الممارسات.', tags: ['pt_code'], ts: 1700000002500 },
+  { id: 'p3', kind: 'persona', name: 'كاتب مبدع', text: 'أنت كاتب مبدع بأسلوب أدبي راقٍ. استخدم لغة غنية وصورًا بلاغية وحافظ على الإيقاع.', tags: ['pt_write'], ts: 1700000001500 },
 ];
 
 interface LibState {
@@ -32,7 +33,18 @@ export const useLibrary = create<LibState>()(
       remove: (id) => set((s) => ({ items: s.items.filter((x) => x.id !== id) })),
       replaceAll: (items) => set({ items }),
     }),
-    { name: 'ai_library', storage: persistStorage, version: 1 },
+    {
+      name: 'ai_library',
+      storage: persistStorage,
+      version: 2,
+      // v2: وسوم تلقائية للشخصيات والقوالب المدمجة
+      migrate: (old: any, version: number) => {
+        if (version < 2 && old && Array.isArray(old.items)) {
+          old.items = old.items.map((x: any) => (SEED_LIB_TAGS[x?.id] && !x.tags ? { ...x, tags: SEED_LIB_TAGS[x.id] } : x));
+        }
+        return old;
+      },
+    },
   ),
 );
 

@@ -55,7 +55,7 @@ export function ModelSelect({
           <Pressable onPress={() => { onChange(null); setOpen(false); }} style={{ padding: 12, borderRadius: 12, backgroundColor: !value ? c.accentSoft : c.surface, borderWidth: 1, borderColor: !value ? c.accent : c.border }}>
             <T size={14} weight={!value ? 'semibold' : 'regular'}>{empty}</T>
           </Pressable>
-          {groups.length === 0 ? <Empty icon="cpu" title="لا توجد نماذج مفعّلة" sub="أضف نقطة اتصال وفعّل النماذج من صفحة «النماذج»." /> : null}
+          {groups.length === 0 ? <Empty icon="cpu" compact title="لا توجد نماذج مفعّلة" sub="أضف نقطة اتصال وفعّل النماذج من صفحة «النماذج»." /> : null}
           {groups.map(({ e, models }) => (
             <View key={e.id} style={{ gap: 6 }}>
               <T size={12.5} weight="semibold" color="muted">{e.label}</T>

@@ -3,8 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useRef, type ReactNode } from 'react';
 import {
   ActivityIndicator, Animated, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch as RNSwitch,
-  Text, TextInput, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle,
-} from 'react-native';
+  Text, TextInput, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useSettings } from '../../store/settings';
@@ -212,10 +211,11 @@ export function Chip({ label, active, onPress, icon }: { label: string; active?:
   );
 }
 
-export function Empty({ icon, title, sub }: { icon: IconName; title: string; sub?: string }) {
+export function Empty({ icon, title, sub, compact }: { icon: IconName; title: string; sub?: string; compact?: boolean }) {
   const c = useColors();
+  const { height } = useWindowDimensions();
   return (
-    <View style={{ alignItems: 'center', gap: 8, paddingVertical: 48, paddingHorizontal: 32 }}>
+    <View style={{ alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 48, paddingHorizontal: 32, minHeight: compact ? undefined : height * 0.62 }}>
       <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: c.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
         <Icon name={icon} size={28} color={c.accent} />
       </View>
@@ -270,7 +270,7 @@ export function Dialog({
           <T weight="bold" size={17}>{title}</T>
           {message ? <T color="text2">{message}</T> : null}
           {children}
-          <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-start' }}>
+          <View style={{ flexDirection: 'row', flexWrap: actions.length > 4 ? 'wrap' : 'nowrap', gap: 8, justifyContent: 'flex-start' }}>
             {actions.map((a, i) => (
               <Button key={i} title={a.title} kind={a.kind ?? (i === 0 ? 'primary' : 'ghost')} onPress={a.onPress} small />
             ))}

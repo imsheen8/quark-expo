@@ -1,10 +1,15 @@
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
+import { DEFAULT_SYSTEM } from '../../src/api/providers';
 import type { Params } from '../../src/api/types';
 import { Button, Card, Field, Screen, T } from '../../src/components/ui/kit';
+import { Segmented } from '../../src/components/ui/panels';
 import { shortModel } from '../../src/lib/util';
 import { modelKey, useSettings } from '../../src/store/settings';
 import { toast } from '../../src/store/data';
+
+type Tab = 'instructions' | 'params';
 
 const num = (t: string): number | undefined => {
   const v = parseFloat(t.replace(',', '.'));
@@ -45,15 +50,51 @@ function Editor({ value, onSave, title, hint }: { value: Params; onSave: (p: Par
   );
 }
 
-export default function ParamsScreen() {
+function InstructionsTab() {
+  const { customInstructions, systemPrompt, patch } = useSettings();
+  return (
+    <View style={{ gap: 14 }}>
+      <T size={13} color="muted">تُرسل هذه التعليمات للنموذج مع كل محادثة. تبقى على جهازك.</T>
+      <Field
+        label="تعليمات خاصة"
+        multiline
+        value={customInstructions}
+        onChangeText={(t) => patch({ customInstructions: t })}
+        placeholder="مثال: أجب بإيجاز، واستخدم أمثلة برمجية بلغة Python، وخاطبني بالفصحى المبسّطة."
+        inputStyle={{ minHeight: 120 }}
+      />
+      <View style={{ gap: 8 }}>
+        <Field label="موجّه النظام (System Prompt)" multiline value={systemPrompt} onChangeText={(t) => patch({ systemPrompt: t })} inputStyle={{ minHeight: 120 }} />
+        <Button title="استعادة الافتراضي" kind="ghost" small onPress={() => patch({ systemPrompt: DEFAULT_SYSTEM })} style={{ alignSelf: 'flex-start' }} />
+      </View>
+    </View>
+  );
+}
+
+function ParamsTab() {
   const { params, setGlobalParams, setModelParams, sel } = useSettings();
   const key = sel ? modelKey(sel.ep, sel.model) : null;
   return (
-    <Screen title="معاملات التوليد">
+    <View style={{ gap: 14 }}>
       <Editor title="عامة (لكل النماذج)" hint="اترك الحقل فارغًا لاستخدام قيمة المزوّد الافتراضية." value={params.global} onSave={setGlobalParams} />
       {key && sel ? (
         <Editor key={key} title={'خاصة بالنموذج: ' + shortModel(sel.model)} hint="تتقدّم على العامة لهذا النموذج فقط." value={params.models[key] ?? {}} onSave={(p) => setModelParams(key, p)} />
       ) : null}
+    </View>
+  );
+}
+
+export default function Personalize() {
+  const { tab: initial } = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(initial === 'params' ? 'params' : 'instructions');
+  return (
+    <Screen title="التخصيص">
+      <Segmented<Tab>
+        items={[{ key: 'instructions', label: 'التعليمات' }, { key: 'params', label: 'معاملات التوليد' }]}
+        value={tab}
+        onChange={setTab}
+      />
+      {tab === 'instructions' ? <InstructionsTab /> : <ParamsTab />}
     </Screen>
   );
 }

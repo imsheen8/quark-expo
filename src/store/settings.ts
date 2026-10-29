@@ -22,6 +22,8 @@ export interface SettingsState {
   themeSel: { dark: string; light: string };
   fontSize: 'sm' | 'md' | 'lg';
   systemPrompt: string;
+  /** تعليمات خاصة يكتبها المستخدم وتُرسل مع كل محادثة */
+  customInstructions: string;
   autoTitle: boolean;
   thinking: ThinkingMode;
   params: { global: Params; models: Record<string, Params> };
@@ -71,6 +73,7 @@ export const useSettings = create<SettingsState>()(
       themeSel: { dark: 'default', light: 'default' },
       fontSize: 'md',
       systemPrompt: DEFAULT_SYSTEM,
+      customInstructions: '',
       autoTitle: true,
       thinking: 'auto',
       params: { global: {}, models: {} },
@@ -159,6 +162,11 @@ export const useSettings = create<SettingsState>()(
         const eps = Array.isArray(rest.endpoints) ? rest.endpoints.filter((e: any) => e?.id !== 'managed') : rest.endpoints;
         const sel = rest.sel?.ep === 'managed' ? null : rest.sel;
         saved = { ...rest, ...(eps ? { endpoints: eps } : {}), ...(rest.sel !== undefined ? { sel } : {}) };
+        const oldPrefs = String(saved?.profile?.prefs || '').trim();
+        if (oldPrefs) {
+          const ci = String(saved?.customInstructions || '').trim();
+          saved = { ...saved, customInstructions: ci ? oldPrefs + '\n\n' + ci : oldPrefs, profile: { ...saved.profile, prefs: '' } };
+        }
         return {
         ...cur,
         ...saved,

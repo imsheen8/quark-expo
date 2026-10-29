@@ -35,7 +35,7 @@ export function ModelPicker({ visible, onClose }: { visible: boolean; onClose: (
       </View>
       <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 4, gap: 14 }} keyboardShouldPersistTaps="handled">
         {groups.length === 0 && !custom ? (
-          <Empty icon="cpu" title="لا توجد نماذج مفعّلة" sub="أضف نقطة اتصال ثم فعّل النماذج من صفحة «النماذج»." />
+          <Empty icon="cpu" compact title="لا توجد نماذج مفعّلة" sub="أضف نقطة اتصال ثم فعّل النماذج من صفحة «النماذج»." />
         ) : null}
         {groups.map(({ e, models }) => (
           <View key={e.id} style={{ gap: 6 }}>

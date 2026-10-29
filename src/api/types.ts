@@ -117,6 +117,7 @@ export interface LibItem {
   name: string;
   text: string;
   fav?: boolean;
+  tags?: string[];
   ts: number;
 }
 
@@ -127,7 +128,6 @@ export interface Skill {
   when: string;
   body: string;
   tags: string[];
-  category: string;
   status: 'published' | 'draft' | 'off';
   source: 'manual' | 'builtin' | 'import' | 'extracted';
   sourceUrl: string;

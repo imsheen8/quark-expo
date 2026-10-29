@@ -2,17 +2,17 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { TAG_COLORS } from '../lib/chatFilter';
 import { useChats } from '../store/chats';
-import { toast } from '../store/data';
-import { setChatTag, useTags } from '../store/tags';
+import { toast, useLibrary, useSkills } from '../store/data';
+import { setItemTag, tagStoreFor, type Tag, type TagTarget } from '../store/tags';
 import { useColors } from '../theme';
 import { Button, Field, Icon, IconButton, Sheet, T } from './ui/kit';
 
 export const TagDot = ({ color, size = 10 }: { color: string; size?: number }) => <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }} />;
 
 /** إنشاء/تعديل وسم */
-export function TagEditor({ visible, editId, onClose }: { visible: boolean; editId?: string | null; onClose: () => void }) {
+export function TagEditor({ visible, editId, onClose, target = 'chat' }: { visible: boolean; editId?: string | null; onClose: () => void; target?: TagTarget }) {
   const c = useColors();
-  const { items, add, update } = useTags();
+  const { items, add, update } = tagStoreFor(target)();
   const t = items.find((x) => x.id === editId);
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
@@ -49,20 +49,24 @@ export function TagEditor({ visible, editId, onClose }: { visible: boolean; edit
 }
 
 /** اختيار وسوم لمحادثة أو أكثر */
-export function TagPicker({ ids, onClose }: { ids: string[] | null; onClose: () => void }) {
+export function TagPicker({ ids, onClose, target = 'chat' }: { ids: string[] | null; onClose: () => void; target?: TagTarget }) {
   const c = useColors();
-  const items = useTags((s) => s.items);
+  const items = tagStoreFor(target)((s) => s.items);
   const chats = useChats((s) => s.chats);
+  const lib = useLibrary((s) => s.items);
+  const skills = useSkills((s) => s.items);
   const [name, setName] = useState('');
-  const sel = ids ? chats.filter((x) => ids.includes(x.id)) : [];
+  const pool: { id: string; tags?: string[] }[] = target === 'chat' ? chats : target === 'skill' ? skills : lib;
+  const sel = ids ? pool.filter((x) => ids.includes(x.id)) : [];
+  const has = (x: { tags?: string[] }, t: Tag) => !!x.tags?.includes(target === 'skill' ? t.name : t.id);
   const create = () => {
-    const t = useTags.getState().add(name);
+    const t = tagStoreFor(target).getState().add(name);
     if (!t) return toast('اكتب اسم الوسم');
-    if (ids) setChatTag(ids, t.id, true);
+    if (ids) setItemTag(target, ids, t.id, true);
     setName('');
   };
   return (
-    <Sheet visible={!!ids} onClose={onClose} title={ids && ids.length > 1 ? `وسوم ${ids.length} محادثات` : 'وسوم المحادثة'} full>
+    <Sheet visible={!!ids} onClose={onClose} title={target === 'chat' ? (ids && ids.length > 1 ? `وسوم ${ids.length} محادثات` : 'وسوم المحادثة') : ids && ids.length > 1 ? `وسوم ${ids.length} عناصر` : 'وسوم العنصر'} full>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }} keyboardShouldPersistTaps="handled">
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <View style={{ flex: 1 }}><Field placeholder="وسم جديد…" value={name} onChangeText={setName} onSubmitEditing={create} maxLength={24} /></View>
@@ -70,10 +74,10 @@ export function TagPicker({ ids, onClose }: { ids: string[] | null; onClose: () 
         </View>
         {items.length === 0 ? <T size={13} color="muted" style={{ textAlign: 'center', padding: 20 }}>لا توجد وسوم بعد — أضف أول وسم من الحقل أعلاه</T> : null}
         {items.map((t) => {
-          const have = sel.filter((x) => x.tags?.includes(t.id)).length;
+          const have = sel.filter((x) => has(x, t)).length;
           const on = have > 0 && have === sel.length;
           return (
-            <Pressable key={t.id} onPress={() => ids && setChatTag(ids, t.id, !on)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, backgroundColor: pressed ? c.surface3 : c.surface2 })}>
+            <Pressable key={t.id} onPress={() => ids && setItemTag(target, ids, t.id, !on)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, backgroundColor: pressed ? c.surface3 : c.surface2 })}>
               <View style={{ width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: on || have ? c.accent : c.muted, backgroundColor: on ? c.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                 {on ? <Icon name="check" size={15} color={c.onAccent} /> : have ? <View style={{ width: 10, height: 2, backgroundColor: c.accent }} /> : null}
               </View>
@@ -84,5 +88,15 @@ export function TagPicker({ ids, onClose }: { ids: string[] | null; onClose: () 
         })}
       </ScrollView>
     </Sheet>
+  );
+}
+
+/** وسوم نصّية بشكل #وسم (بلا مربعات) لتوضع بجانب نص البطاقة في نفس السطر */
+export function TagLabels({ tags, max = 3 }: { tags: Tag[]; max?: number }) {
+  return (
+    <>
+      {tags.slice(0, max).map((t) => <T key={t.id} size={11.5} style={{ color: t.color }}>#{t.name}</T>)}
+      {tags.length > max ? <T size={11.5} color="muted">+{tags.length - max}</T> : null}
+    </>
   );
 }

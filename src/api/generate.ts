@@ -51,7 +51,7 @@ export function buildSystemEx(query: string, usePins = false): { system: string;
   const parts: string[] = [s.systemPrompt];
   if (persona) parts.push('الشخصية المطلوبة منك: ' + persona.text);
   if (nm) parts.push('اسم المستخدم: ' + nm);
-  if (s.profile.prefs) parts.push('تفضيلات المستخدم الشخصية (طبّقها في كل الردود): ' + s.profile.prefs);
+  if (s.customInstructions?.trim()) parts.push('تعليمات خاصة من المستخدم (التزم بها دائمًا): ' + s.customInstructions.trim());
   if (s.memory.enabled) {
     const mem = useMemory.getState();
     const picked = pickMemories(mem.items, query, s.memory.max);

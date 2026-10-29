@@ -38,8 +38,8 @@ export default function Data() {
       if (Array.isArray(j.library)) useLibrary.getState().replaceAll(j.library);
       if (Array.isArray(j.memory)) useMemory.getState().replaceAll(j.memory);
       if (j.settings && typeof j.settings === 'object') {
-        const { endpoints, sel, theme, themeSel, fontSize, systemPrompt, autoTitle, params, profile, memory, thinking } = j.settings;
-        useSettings.getState().patch(JSON.parse(JSON.stringify({ endpoints, sel, theme, themeSel, fontSize, systemPrompt, autoTitle, params, profile, memory, thinking })));
+        const { endpoints, sel, theme, themeSel, fontSize, systemPrompt, customInstructions, autoTitle, params, profile, memory, thinking } = j.settings;
+        useSettings.getState().patch(JSON.parse(JSON.stringify({ endpoints, sel, theme, themeSel, fontSize, systemPrompt, customInstructions, autoTitle, params, profile, memory, thinking })));
       }
       toast('تم الاستيراد');
     } catch {

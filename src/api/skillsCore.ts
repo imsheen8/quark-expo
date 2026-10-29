@@ -13,7 +13,7 @@ export interface SkillsConf { enabled: boolean; max: number; sens: SkSens; autoA
 export const defaultSkillsConf = (): SkillsConf => ({ enabled: true, max: 2, sens: 'balanced', autoApprove: false });
 
 /* ---------- SKILL.md ---------- */
-export interface ParsedSkill { name: string; description: string; when: string; tags: string[]; category: string; status: Skill['status'] | ''; body: string }
+export interface ParsedSkill { name: string; description: string; when: string; tags: string[]; status: Skill['status'] | ''; body: string }
 
 export function skParse(text: string): ParsedSkill {
   const src = String(text || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
@@ -43,33 +43,32 @@ export function skParse(text: string): ParsedSkill {
     description: unq(meta.description).trim(),
     when: unq(meta.when_to_use || meta['when-to-use'] || meta.when).trim(),
     tags: list(meta.tags).filter(Boolean).slice(0, 12),
-    category: unq(meta.category).trim() || 'عام',
     status: st === 'published' || st === 'draft' || st === 'off' ? st : '',
     body,
   };
 }
 
-export function skEmit(s: Pick<Skill, 'name' | 'description' | 'when' | 'category' | 'tags' | 'status' | 'body'>): string {
+export function skEmit(s: Pick<Skill, 'name' | 'description' | 'when' | 'tags' | 'status' | 'body'>): string {
   const q = (v: string) => (/[:#\[\]{}",'\n]|^\s|\s$/.test(v) ? JSON.stringify(v) : v);
-  return `---\nname: ${q(s.name)}\ndescription: ${q(s.description || '')}\nwhen_to_use: ${q(s.when || '')}\ncategory: ${q(s.category || 'عام')}\ntags: [${(s.tags || []).map(q).join(', ')}]\nstatus: ${s.status || 'published'}\n---\n\n${s.body || ''}\n`;
+  return `---\nname: ${q(s.name)}\ndescription: ${q(s.description || '')}\nwhen_to_use: ${q(s.when || '')}\ntags: [${(s.tags || []).map(q).join(', ')}]\nstatus: ${s.status || 'published'}\n---\n\n${s.body || ''}\n`;
 }
 
 export const cut = (x: string, n: number) => (x.length > n ? x.slice(0, n - 1) + '…' : x);
 
 export function skNew(o: Partial<Skill> = {}, id = Math.random().toString(36).slice(2, 10), now = Date.now()): Skill {
-  return { id, name: '', description: '', when: '', body: '', tags: [], category: 'عام', status: 'published', source: 'manual', sourceUrl: '', uses: 0, lastUsed: 0, createdAt: now, updatedAt: now, ...o };
+  return { id, name: '', description: '', when: '', body: '', tags: [], status: 'published', source: 'manual', sourceUrl: '', uses: 0, lastUsed: 0, createdAt: now, updatedAt: now, ...o };
 }
 
-export const SK_STARTERS: Pick<Skill, 'name' | 'description' | 'when' | 'tags' | 'category' | 'body'>[] = [
-  { name: 'بريد مهني', description: 'صياغة بريد إلكتروني أو رسالة رسمية واضحة ومهذّبة.', when: 'عندما يطلب المستخدم كتابة أو تحسين بريد إلكتروني أو رسالة عمل رسمية.', tags: ['بريد', 'كتابة', 'عمل'], category: 'كتابة',
+export const SK_STARTERS: Pick<Skill, 'name' | 'description' | 'when' | 'tags' | 'body'>[] = [
+  { name: 'بريد مهني', description: 'صياغة بريد إلكتروني أو رسالة رسمية واضحة ومهذّبة.', when: 'عندما يطلب المستخدم كتابة أو تحسين بريد إلكتروني أو رسالة عمل رسمية.', tags: ['بريد', 'كتابة', 'عمل'],
     body: '1. حدّد المستلم والغرض والإجراء المطلوب قبل الكتابة، واسأل عن الناقص فقط إن كان جوهريًا.\n2. ابدأ بسطر موضوع محدد (6–10 كلمات).\n3. افتتح بتحية مناسبة للعلاقة، ثم الغرض في الجملة الأولى.\n4. اجعل الفقرات قصيرة، وضع المطلوب والموعد النهائي في سطر مستقل واضح.\n5. اختم بخطوة تالية ومجاملة قصيرة، ثم التوقيع.\n6. حافظ على لغة المستخدم ونبرته، وقدّم نسخة واحدة جاهزة للإرسال.' },
-  { name: 'تلخيص بنقاط', description: 'تلخيص نص طويل في نقاط مركّزة مع الخلاصة.', when: 'عندما يطلب المستخدم تلخيص مقال أو نص أو مستند أو محادثة.', tags: ['تلخيص', 'نقاط', 'قراءة'], category: 'تحليل',
+  { name: 'تلخيص بنقاط', description: 'تلخيص نص طويل في نقاط مركّزة مع الخلاصة.', when: 'عندما يطلب المستخدم تلخيص مقال أو نص أو مستند أو محادثة.', tags: ['تلخيص', 'نقاط', 'قراءة'],
     body: '1. ابدأ بجملة واحدة تلخّص الفكرة المركزية.\n2. ثم 4 إلى 7 نقاط، كل نقطة معلومة مستقلة بجملة واحدة، مرتبة حسب الأهمية.\n3. أبقِ الأرقام والأسماء والتواريخ كما وردت، ولا تضف معلومات من خارج النص.\n4. اختم بسطر «الخلاصة» أو «المطلوب منك» إن وُجد إجراء.\n5. إن كان النص طويلًا جدًا فاجعل التلخيص بنسبة تقارب 10–15% من طوله.' },
-  { name: 'مراجعة كود', description: 'مراجعة كود برمجي واكتشاف الأخطاء والتحسينات.', when: 'عندما يلصق المستخدم كودًا ويطلب مراجعته أو تصحيحه أو تحسينه.', tags: ['كود', 'برمجة', 'مراجعة'], category: 'برمجة',
+  { name: 'مراجعة كود', description: 'مراجعة كود برمجي واكتشاف الأخطاء والتحسينات.', when: 'عندما يلصق المستخدم كودًا ويطلب مراجعته أو تصحيحه أو تحسينه.', tags: ['كود', 'برمجة', 'مراجعة'],
     body: '1. اقرأ الكود كاملًا وافهم هدفه قبل التعليق.\n2. رتّب الملاحظات: أخطاء تمنع العمل، ثم ثغرات أمنية، ثم أداء، ثم وضوح وأسلوب.\n3. لكل ملاحظة اذكر السطر أو الدالة، وسبب المشكلة، والإصلاح المقترح بكود قصير.\n4. لا تُعد كتابة الملف كله إلا إذا طُلب؛ اعرض الأجزاء المتغيّرة فقط.\n5. ابدأ بما هو جيد في الكود بجملة واحدة، واختم بأهم ثلاث خطوات تالية.' },
-  { name: 'شرح مبسّط', description: 'شرح مفهوم صعب لمبتدئ بأمثلة وتشبيهات.', when: 'عندما يطلب المستخدم شرح مفهوم علمي أو تقني أو أكاديمي بطريقة سهلة أو لمبتدئ.', tags: ['شرح', 'تعليم', 'مبتدئ'], category: 'تعليم',
+  { name: 'شرح مبسّط', description: 'شرح مفهوم صعب لمبتدئ بأمثلة وتشبيهات.', when: 'عندما يطلب المستخدم شرح مفهوم علمي أو تقني أو أكاديمي بطريقة سهلة أو لمبتدئ.', tags: ['شرح', 'تعليم', 'مبتدئ'],
     body: '1. ابدأ بتعريف في جملة واحدة بلا مصطلحات صعبة.\n2. اضرب تشبيهًا من الحياة اليومية يوضح الفكرة.\n3. اشرح خطوة بخطوة، وعرّف كل مصطلح جديد عند أول ظهور.\n4. أعطِ مثالًا عمليًا صغيرًا.\n5. اختم بسؤال فهم واحد أو نقطة «لتتذكر».' },
-  { name: 'ترجمة احترافية', description: 'ترجمة تحافظ على المعنى والنبرة والتنسيق.', when: 'عندما يطلب المستخدم ترجمة نص أو فقرة بين لغتين.', tags: ['ترجمة', 'لغات'], category: 'كتابة',
+  { name: 'ترجمة احترافية', description: 'ترجمة تحافظ على المعنى والنبرة والتنسيق.', when: 'عندما يطلب المستخدم ترجمة نص أو فقرة بين لغتين.', tags: ['ترجمة', 'لغات'],
     body: '1. ترجم المعنى لا الكلمات، وحافظ على النبرة (رسمية/ودّية/تقنية).\n2. أبقِ الأسماء والأرقام والروابط والتنسيق كما هي.\n3. إن كان لمصطلح أكثر من ترجمة مقبولة فاختر الأشهر وضع البديل بين قوسين مرة واحدة.\n4. قدّم الترجمة وحدها دون شرح، إلا إذا طُلب أو وُجد غموض مهم فاذكره في سطر بعدها.' },
 ];
 
@@ -168,7 +167,7 @@ export function skRawUrl(u: string): string {
 export function skFromText(text: string, extra: Partial<Skill> = {}): Skill {
   const p = skParse(text);
   if (!p.name || p.body.length < 10) throw new Error('الملف لا يبدو بصيغة SKILL.md (يحتاج اسمًا ومحتوى)');
-  return skNew({ name: cut(p.name, 80), description: cut(p.description, 400), when: cut(p.when || p.description, 400), tags: p.tags, category: cut(p.category, 30), body: p.body.slice(0, 20000), status: p.status || 'published', ...extra });
+  return skNew({ name: cut(p.name, 80), description: cut(p.description, 400), when: cut(p.when || p.description, 400), tags: p.tags, body: p.body.slice(0, 20000), status: p.status || 'published', ...extra });
 }
 
 /** ملف JSON مُصدَّر (quark-skills) أو مصفوفة */
@@ -179,7 +178,7 @@ export function skFromJson(txt: string): Skill[] {
   return arr.filter((x: any) => x && x.name && x.body).slice(0, 200).map((x: any) =>
     skNew({
       name: cut(String(x.name), 80), description: cut(String(x.description || ''), 400), when: cut(String(x.when || x.when_to_use || ''), 400), body: String(x.body).slice(0, 20000),
-      tags: (Array.isArray(x.tags) ? x.tags : []).map(String).slice(0, 12), category: cut(String(x.category || 'عام'), 30),
+      tags: (Array.isArray(x.tags) ? x.tags : []).map(String).slice(0, 12),
       status: ['published', 'draft', 'off'].includes(x.status) ? x.status : 'published', source: 'import',
     }),
   );
@@ -193,7 +192,7 @@ export function skFromExtraction(raw: string, autoApprove: boolean): Skill[] {
   arr.slice(0, 2).forEach((x) => {
     if (!x || !String(x.name || '').trim() || String(x.instructions || '').trim().length < 30) return;
     out.push(skNew({
-      name: cut(String(x.name).trim(), 60), description: cut(String(x.description || ''), 240), when: cut(String(x.when_to_use || ''), 300), category: cut(String(x.category || 'عام'), 30),
+      name: cut(String(x.name).trim(), 60), description: cut(String(x.description || ''), 240), when: cut(String(x.when_to_use || ''), 300),
       tags: (Array.isArray(x.tags) ? x.tags : []).map((t: any) => cut(String(t).trim(), 24)).filter(Boolean).slice(0, 8), body: String(x.instructions).trim().slice(0, 6000),
       status: autoApprove ? 'published' : 'draft', source: 'extracted',
     }));
