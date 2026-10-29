@@ -6,7 +6,7 @@ import type { LibItem, Skill } from '../src/api/types';
 import { useSkillsUi } from '../src/components/SkillsPanel';
 import { TagDot, TagEditor, TagLabels, TagPicker } from '../src/components/TagDialogs';
 import { MenuIcon } from '../src/components/ui/MenuIcon';
-import { Button, Chip, Dialog, Empty, Field, Icon, IconButton, Sheet, T, haptic } from '../src/components/ui/kit';
+import { Button, Chip, Dialog, Empty, Field, Group, Icon, IconButton, Row, Sheet, T, haptic } from '../src/components/ui/kit';
 import { toast, useLibrary, useSkills, useUi } from '../src/store/data';
 import { useChats } from '../src/store/chats';
 import { syncSkillTags, tagStoreFor, usePersonaTags, useSkillTags, useTemplateTags, type Tag, type TagTarget } from '../src/store/tags';
@@ -173,17 +173,18 @@ export default function Library() {
         }}
       />
 
-      <Dialog
-        visible={!!actions}
-        title={actions?.name ?? ''}
-        onClose={() => setActions(null)}
-        actions={[
-          { title: actions?.fav ? 'إزالة من المفضلة' : 'إضافة للمفضلة', onPress: () => { if (actions) update(actions.id, { fav: !actions.fav }); setActions(null); } },
-          { title: 'الوسوم', onPress: () => { const x = actions; setActions(null); if (x) setTimeout(() => setPicker({ ids: [x.id], target: x.kind }), 250); } },
-          { title: 'تعديل', onPress: () => { if (actions) setForm({ id: actions.id, kind: actions.kind, name: actions.name, text: actions.text }); setActions(null); } },
-          { title: 'حذف', kind: 'danger', onPress: () => { const x = actions; setActions(null); if (x) setTimeout(() => setDel(x), 250); } },
-        ]}
-      />
+      <Sheet visible={!!actions} onClose={() => setActions(null)} title={actions?.name}>
+        <View style={{ padding: 16 }}>
+          {actions ? (
+            <Group>
+              <Row icon="star" title={actions.fav ? 'إزالة من المفضلة' : 'إضافة للمفضلة'} onPress={() => { update(actions.id, { fav: !actions.fav }); setActions(null); }} />
+              <Row icon="tag" title="إضافة وسم" onPress={() => { const x = actions; setActions(null); setTimeout(() => setPicker({ ids: [x.id], target: x.kind }), 250); }} />
+              <Row icon="edit-2" title="تعديل" onPress={() => { setForm({ id: actions.id, kind: actions.kind, name: actions.name, text: actions.text }); setActions(null); }} />
+              <Row icon="trash-2" title={actions.kind === 'persona' ? 'حذف الشخصية' : 'حذف القالب'} danger onPress={() => { const x = actions; setActions(null); setTimeout(() => setDel(x), 250); }} />
+            </Group>
+          ) : null}
+        </View>
+      </Sheet>
       <Sheet visible={!!form} onClose={() => setForm(null)} title={form?.id ? 'تعديل عنصر' : 'عنصر جديد'} full>
         {form ? (
           <View style={{ padding: 16, gap: 12 }}>

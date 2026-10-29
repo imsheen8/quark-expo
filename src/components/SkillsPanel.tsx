@@ -157,19 +157,20 @@ export function useSkillsUi(q: string, menuOpen: boolean, onMenuClose: () => voi
   );
   const overlays = (
     <>
-      <Dialog
-        visible={!!actions}
-        title={actions?.name ?? ''}
-        onClose={() => setActions(null)}
-        actions={[
-          { title: actions?.status === 'published' ? 'إيقاف' : 'نشر', onPress: () => { if (actions) update(actions.id, { status: actions.status === 'published' ? 'off' : 'published' }); setActions(null); } },
-          { title: 'الوسوم', onPress: () => { const x = actions; setActions(null); if (x && onTags) setTimeout(() => onTags(x), 250); } },
-          { title: 'تعديل', onPress: () => { const x = actions; setActions(null); if (x) setEdit({ base: x, v: x }); } },
-          { title: 'تكرار', onPress: () => { if (actions) dup(actions); setActions(null); } },
-          { title: 'تصدير SKILL.md', onPress: () => { if (actions) void exportOne(actions); setActions(null); } },
-          { title: 'حذف', kind: 'danger', onPress: () => { const x = actions; setActions(null); if (x) setTimeout(() => setDel(x), 250); } },
-        ]}
-      />
+      <Sheet visible={!!actions} onClose={() => setActions(null)} title={actions?.name}>
+        <View style={{ padding: 16 }}>
+          {actions ? (
+            <Group>
+              <Row icon={actions.status === 'published' ? 'eye-off' : 'eye'} title={actions.status === 'published' ? 'إيقاف المهارة' : 'نشر المهارة'} onPress={() => { update(actions.id, { status: actions.status === 'published' ? 'off' : 'published' }); setActions(null); }} />
+              <Row icon="tag" title="إضافة وسم" onPress={() => { const x = actions; setActions(null); if (onTags) setTimeout(() => onTags(x), 250); }} />
+              <Row icon="edit-2" title="تعديل" onPress={() => { const x = actions; setActions(null); setEdit({ base: x, v: x }); }} />
+              <Row icon="copy" title="تكرار" onPress={() => { dup(actions); setActions(null); }} />
+              <Row icon="file-text" title="تصدير SKILL.md" onPress={() => { const x = actions; setActions(null); void exportOne(x); }} />
+              <Row icon="trash-2" title="حذف المهارة" danger onPress={() => { const x = actions; setActions(null); setTimeout(() => setDel(x), 250); }} />
+            </Group>
+          ) : null}
+        </View>
+      </Sheet>
 
       {/* إضافة */}
       <Sheet visible={menuOpen} onClose={onMenuClose} title="إضافة مهارة">
