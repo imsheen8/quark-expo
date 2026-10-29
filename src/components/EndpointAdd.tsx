@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Linking, View } from 'react-native';
 import { addEndpointFlow, apiLabel, localLabel, normUrl, testEndpoint } from '../api/endpointFlow';
-import { PRESETS } from '../api/providers';
+import { PRESETS, PROTO_LABEL } from '../api/providers';
 import type { Proto } from '../api/types';
 import { toast } from '../store/data';
 import { useColors } from '../theme';
 import { SelectBox } from './SelectBox';
-import { Panel, Segmented } from './ui/panels';
+import { Panel } from './ui/panels';
 import { Button, Field, T } from './ui/kit';
 
 type Kind = 'local' | 'api';
@@ -28,6 +28,7 @@ export function EndpointAdd() {
   const [preset, setPreset] = useState(FIRST.local);
   const [url, setUrl] = useState(PRESETS[FIRST.local].url);
   const [key, setKey] = useState('');
+  const [proto, setProto] = useState<Proto>(PRESETS[FIRST.local].proto);
   const [busy, setBusy] = useState(false);
   const p = PRESETS[preset] ?? PRESETS.custom;
 
@@ -35,19 +36,21 @@ export function EndpointAdd() {
     setKind(k);
     setPreset(FIRST[k]);
     setUrl(PRESETS[FIRST[k]].url);
+    setProto(PRESETS[FIRST[k]].proto);
     setKey('');
   };
 
   const choose = (id: string) => {
     setPreset(id);
     setUrl(PRESETS[id].url);
+    setProto(PRESETS[id].proto);
   };
 
   const draft = () => {
     const u = normUrl(url);
     // عنوان ينتهي بـ /v1 على Ollama يعني الواجهة المتوافقة مع OpenAI
-    const proto: Proto = p.proto === 'ollama' && /\/v1$/.test(u) ? 'openai' : p.proto;
-    return { preset, label: kind === 'local' ? localLabel(u) : apiLabel(preset), url: u, key: key.trim(), proto, kind };
+    const pr: Proto = proto === 'ollama' && /\/v1$/.test(u) ? 'openai' : proto;
+    return { preset, label: kind === 'local' ? localLabel(u) : apiLabel(preset), url: u, key: key.trim(), proto: pr, kind };
   };
 
   const test = async () => {
@@ -75,13 +78,12 @@ export function EndpointAdd() {
 
   return (
     <Panel icon="server" title="إضافة نماذج" tag="نقاط الاتصال">
-      <Segmented
+      <SelectBox
+        title="النوع"
         value={kind}
+        options={[{ key: 'local', label: 'محلي' }, { key: 'api', label: 'مفتاح' }]}
         onChange={switchKind}
-        items={[
-          { key: 'local', label: 'محلي', icon: 'monitor' },
-          { key: 'api', label: 'مفتاح', icon: 'key' },
-        ]}
+        chevronFirst
       />
 
       {/* المزوّد | الرابط: نصفان بينهما فجوة بلون الخلفية، الزوايا الخارجية منحنية والداخلية حادّة، والسهم في الطرف البعيد */}
@@ -120,6 +122,18 @@ export function EndpointAdd() {
         placeholder={kind === 'local' ? 'المفتاح (اختياري)' : 'مفتاح API'}
       />
 
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <SelectBox
+          title="البروتوكول"
+          value={proto}
+          options={(Object.keys(PROTO_LABEL) as Proto[]).map((x) => ({ key: x, label: PROTO_LABEL[x] }))}
+          onChange={setProto}
+          chevronFirst
+          style={{ flex: 1 }}
+        />
+        <Button title="إضافة" onPress={add} loading={busy} style={{ flex: 1 }} />
+      </View>
+
       {p.help ? (
         <View style={{ gap: 2 }}>
           <T size={12} color="muted">{p.help}</T>
@@ -131,10 +145,7 @@ export function EndpointAdd() {
         </View>
       ) : null}
 
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <Button title="إضافة" onPress={add} loading={busy} style={{ flex: 1 }} />
-        <Button title="اختبار" kind="ghost" onPress={test} loading={busy} style={{ flex: 1 }} />
-      </View>
+      <Button title="اختبار" kind="ghost" onPress={test} loading={busy} />
     </Panel>
   );
 }

@@ -43,7 +43,7 @@ export default function Voices() {
     return (
       <Screen title="الأصوات">
         <Empty icon="headphones" title="لا توجد مفاتيح صوت" sub="أضف مفتاح مزوّد يدعم القراءة الصوتية (OpenAI أو ElevenLabs أو Gemini أو Deepgram أو مخصص) لتجربة الأصوات واختيارها." />
-        <Button title="إضافة مفتاح صوت" icon="key" onPress={() => r.push('/settings/voice')} />
+        <Button title="إضافة مفتاح صوت" icon="key" onPress={() => r.push('/settings/endpoints?tab=voice')} />
       </Screen>
     );
 

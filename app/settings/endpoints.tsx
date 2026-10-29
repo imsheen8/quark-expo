@@ -1,4 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { hostOf } from '../../src/api/providers';
@@ -6,7 +7,8 @@ import { fetchModels } from '../../src/api/stream';
 import type { Endpoint } from '../../src/api/types';
 import { EndpointAdd } from '../../src/components/EndpointAdd';
 import { EndpointForm } from '../../src/components/EndpointForm';
-import { Badge, Panel } from '../../src/components/ui/panels';
+import { VoiceKeyAdd, VoiceKeyList } from '../../src/components/VoiceKeys';
+import { Badge, Panel, Segmented } from '../../src/components/ui/panels';
 import { Button, Dialog, Divider, Icon, Screen, T, haptic } from '../../src/components/ui/kit';
 import { toast } from '../../src/store/data';
 import { useSettings } from '../../src/store/settings';
@@ -104,6 +106,8 @@ function EndpointCard({ e, onDelete, onEdit }: { e: Endpoint; onDelete: () => vo
 
 export default function Endpoints() {
   const { endpoints, removeEndpoint } = useSettings();
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<'text' | 'voice'>(params.tab === 'voice' ? 'voice' : 'text');
   const [edit, setEdit] = useState<Endpoint | null>(null);
   const [del, setDel] = useState<Endpoint | null>(null);
   const local = endpoints.filter((e) => e.kind === 'local');
@@ -122,12 +126,29 @@ export default function Endpoints() {
 
   return (
     <Screen title="المفاتيح ونقاط الاتصال">
-      <EndpointAdd />
-      <Panel icon="monitor" title="النماذج المضافة" tag="نقاط الاتصال" sub="أدِر النقاط التي أضفتها.">
-        {endpoints.length === 0 ? <T size={13.5} color="muted">لم تُضف أي نقطة بعد. أضف خادمًا محليًا أو مفتاح API من الأعلى.</T> : null}
-        {group('محلي', 'monitor', local)}
-        {group('API', 'globe', api)}
-      </Panel>
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        items={[
+          { key: 'text', label: 'الكتابة', icon: 'type' },
+          { key: 'voice', label: 'الصوت', icon: 'mic' },
+        ]}
+      />
+      {tab === 'voice' ? (
+        <>
+          <VoiceKeyAdd />
+          <VoiceKeyList />
+        </>
+      ) : (
+        <>
+          <EndpointAdd />
+          <Panel icon="monitor" title="النماذج المضافة" tag="نقاط الاتصال" sub="أدِر النقاط التي أضفتها.">
+            {endpoints.length === 0 ? <T size={13.5} color="muted">لم تُضف أي نقطة بعد. أضف خادمًا محليًا أو مفتاح API من الأعلى.</T> : null}
+            {group('محلي', 'monitor', local)}
+            {group('API', 'globe', api)}
+          </Panel>
+        </>
+      )}
       {edit ? <EndpointForm key={edit.id} visible edit={edit} onClose={() => setEdit(null)} /> : null}
       <Dialog
         visible={!!del}

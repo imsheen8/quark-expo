@@ -6,6 +6,8 @@ import type { Endpoint, Proto } from '../api/types';
 import { endpointFromPreset, useSettings } from '../store/settings';
 import { toast } from '../store/data';
 import { useColors } from '../theme';
+import { SelectBox } from './SelectBox';
+import { Badge } from './ui/panels';
 import { Button, Chip, Field, Sheet, T } from './ui/kit';
 
 /** إضافة أو تعديل نقطة اتصال (ورقة سفلية) */
@@ -69,8 +71,35 @@ export function EndpointForm({ visible, onClose, edit }: { visible: boolean; onC
     onClose();
   };
 
+  if (edit) {
+    return (
+      <Sheet visible={visible} onClose={onClose} title="تعديل نقطة الاتصال">
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <T size={15.5} weight="bold" ltr numberOfLines={1} style={{ flexShrink: 1 }}>{edit.label}</T>
+            <Badge text={edit.kind === 'local' ? 'محلي' : 'API'} />
+          </View>
+          {kind === 'local' ? <Field label="العنوان الأساسي" value={url} onChangeText={setUrl} ltr placeholder="http://192.168.1.5:8080" keyboardType="url" /> : null}
+          <Field label={kind === 'local' ? 'المفتاح (اختياري)' : 'مفتاح API'} value={key} onChangeText={setKey} ltr secureTextEntry placeholder="sk-…" />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <SelectBox
+              title="البروتوكول"
+              value={proto}
+              options={(Object.keys(PROTO_LABEL) as Proto[]).map((x) => ({ key: x, label: PROTO_LABEL[x] }))}
+              onChange={setProto}
+              chevronFirst
+              style={{ flex: 1 }}
+            />
+            <Button title="حفظ" onPress={save} loading={busy} style={{ flex: 1 }} />
+          </View>
+          <Button title="اختبار" kind="ghost" onPress={test} loading={busy} />
+        </ScrollView>
+      </Sheet>
+    );
+  }
+
   return (
-    <Sheet visible={visible} onClose={onClose} title={edit ? 'تعديل نقطة الاتصال' : 'إضافة نقطة اتصال'} full>
+    <Sheet visible={visible} onClose={onClose} title="إضافة نقطة اتصال" full>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
         <View style={{ gap: 6 }}>
           <T size={12.5} weight="medium" color="muted">المزوّد</T>

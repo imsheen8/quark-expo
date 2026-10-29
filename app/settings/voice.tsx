@@ -1,99 +1,35 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { micCancel, micStart, micStop, speak, stopSpeaking, testConn, transcribeUri, useSpeaker } from '../../src/api/voice';
+import { micCancel, micStart, micStop, speak, stopSpeaking, transcribeUri, useSpeaker } from '../../src/api/voice';
 import {
-  SAMPLE_AR, SAMPLE_EN, STT_LANGS, STT_PROVIDERS, TTS_PROVIDERS, VOICE_PRESETS, connCaps, connHost, connLabel, connsFor, ttsVoiceList, voiceConf, type Preset,
+  SAMPLE_AR, SAMPLE_EN, STT_LANGS, STT_PROVIDERS, TTS_PROVIDERS, connLabel, connsFor, ttsVoiceList, voiceConf,
 } from '../../src/api/voiceCore';
-import { Button, Card, Chip, Empty, Field, Group, Icon, IconButton, Row, Screen, Sheet, T } from '../../src/components/ui/kit';
+import { Button, Card, Chip, Field, Group, Icon, IconButton, Row, Screen, Sheet, T } from '../../src/components/ui/kit';
 import { toast } from '../../src/store/data';
 import { useVoice } from '../../src/store/voice';
 import { useColors } from '../../src/theme';
 import * as FileSystem from 'expo-file-system/legacy';
 
-type Tab = 'keys' | 'tts' | 'stt';
+type Tab = 'tts' | 'stt';
 
 export default function VoiceSettings() {
   const [tab, setTab] = useState<Tab>('tts');
+  const router = useRouter();
+  const goKeys = () => router.push('/settings/endpoints?tab=voice');
   const c = useColors();
   return (
     <Screen title="الصوت">
       <View style={{ flexDirection: 'row', backgroundColor: c.surface2, borderRadius: 14, padding: 4 }}>
-        {([['tts', 'القراءة', 'volume-2'], ['stt', 'التعرّف', 'mic'], ['keys', 'المفاتيح', 'key']] as const).map(([k, l, ic]) => (
+        {([['tts', 'القراءة', 'volume-2'], ['stt', 'التعرّف', 'mic']] as const).map(([k, l, ic]) => (
           <Pressable key={k} onPress={() => { stopSpeaking(); setTab(k); }} style={{ flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', height: 38, borderRadius: 10, backgroundColor: tab === k ? c.surface3 : 'transparent' }}>
             <Icon name={ic} size={15} color={tab === k ? c.text : c.muted} />
             <T size={13} weight={tab === k ? 'bold' : 'medium'} color={tab === k ? 'text' : 'muted'}>{l}</T>
           </Pressable>
         ))}
       </View>
-      {tab === 'keys' ? <Keys /> : tab === 'tts' ? <Tts goKeys={() => setTab('keys')} /> : <Stt goKeys={() => setTab('keys')} />}
+      {tab === 'tts' ? <Tts goKeys={goKeys} /> : <Stt goKeys={goKeys} />}
     </Screen>
-  );
-}
-
-/* ---------------- مفاتيح الصوت ---------------- */
-function Keys() {
-  const c = useColors();
-  const { conns, addConn, updateConn, removeConn, stt, tts } = useVoice();
-  const [preset, setPreset] = useState<Preset>('openai');
-  const [url, setUrl] = useState(VOICE_PRESETS.openai.url);
-  const [key, setKey] = useState('');
-  const [busy, setBusy] = useState(false);
-  const P = VOICE_PRESETS[preset];
-  const help = (STT_PROVIDERS[preset] || TTS_PROVIDERS[preset])?.help || '';
-
-  const pick = (p: Preset) => { setPreset(p); setUrl(VOICE_PRESETS[p].url); };
-  const test = async () => {
-    if (!key.trim() && !P.custom) return toast('أدخل مفتاح API');
-    setBusy(true);
-    try { await testConn(preset, url.trim(), key.trim()); toast('المفتاح يعمل ✓'); } catch (e) { toast('فشل الاختبار: ' + (e instanceof Error ? e.message : String(e))); } finally { setBusy(false); }
-  };
-  const add = () => {
-    if (!key.trim() && !P.custom) return toast('أدخل مفتاح API');
-    if (P.custom && !/^https?:\/\//i.test(url.trim())) return toast('أدخل عنوان API يبدأ بـ http');
-    addConn({ preset, url: P.fixed ? '' : url.trim().replace(/\/+$/, ''), key: key.trim() });
-    setKey('');
-    toast('أُضيف المفتاح');
-  };
-
-  return (
-    <>
-      <T size={13} color="text2">أضف مفتاح المزوّد مرة واحدة ثم اختره في تبويبي «القراءة» و«التعرّف». تُحفظ المفاتيح على جهازك وتُرسل مباشرة إلى المزوّد.</T>
-      <Card style={{ gap: 10 }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {(Object.keys(VOICE_PRESETS) as Preset[]).map((p) => <Chip key={p} label={VOICE_PRESETS[p].label} active={preset === p} onPress={() => pick(p)} />)}
-        </ScrollView>
-        {!P.fixed ? <Field label="عنوان API" value={url} onChangeText={setUrl} ltr placeholder="https://api.example.com/v1" keyboardType="url" /> : null}
-        <Field label={P.custom ? 'مفتاح API (اختياري)' : 'مفتاح API'} value={key} onChangeText={setKey} ltr secureTextEntry placeholder="sk-…" />
-        {help ? <T size={12} color="muted">{help}</T> : null}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button title="اختبار" kind="ghost" icon="check-circle" onPress={test} loading={busy} style={{ flex: 1 }} />
-          <Button title="إضافة" icon="plus" onPress={add} style={{ flex: 1 }} />
-        </View>
-      </Card>
-
-      <T weight="bold">المفاتيح المضافة</T>
-      {conns.length === 0 ? <Empty icon="key" title="لم تُضف أي مفتاح بعد" sub="استخدم النموذج أعلاه لإضافة أول مفتاح." /> : null}
-      {conns.map((cn) => {
-        const caps = connCaps(cn);
-        const used = (['tts', 'stt'] as const).filter((k) => (k === 'tts' ? tts : stt).conn === cn.id);
-        return (
-          <Card key={cn.id} style={{ gap: 6, opacity: cn.enabled ? 1 : 0.6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <T weight="bold" ltr>{connHost(cn)}</T>
-              {caps.tts ? <T size={11} color="accent" style={{ backgroundColor: c.accentSoft, paddingHorizontal: 8, borderRadius: 8 }}>قراءة</T> : null}
-              {caps.stt ? <T size={11} color="accent" style={{ backgroundColor: c.accentSoft, paddingHorizontal: 8, borderRadius: 8 }}>تعرّف</T> : null}
-              {!cn.enabled ? <T size={11} color="muted">معطّل</T> : null}
-            </View>
-            <T size={12} color="muted">{cn.key ? 'المفتاح: ••••' + cn.key.slice(-4) : 'بدون مفتاح'}{used.length ? ' · مستخدم في ' + used.map((k) => (k === 'tts' ? 'القراءة' : 'التعرّف')).join(' و') : ''}</T>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Button title={cn.enabled ? 'تعطيل' : 'تفعيل'} kind="ghost" small onPress={() => updateConn(cn.id, { enabled: !cn.enabled })} />
-              <Button title="حذف" kind="danger" small onPress={() => removeConn(cn.id)} />
-            </View>
-          </Card>
-        );
-      })}
-    </>
   );
 }
 
