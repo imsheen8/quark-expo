@@ -1,6 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { testMany, testModel } from '../api/modelBench';
 import {
   FAMS, buildExport, capReason, capVision, ctxOf, dedupeKill, defaultMdUi, dupGroups, famOf, filterModels, filtersActive, fmtCtx, itemsOf, latOf, planImport, secs, statusOf,
@@ -10,13 +11,14 @@ import { hostOf } from '../api/providers';
 import { readTextFile } from '../lib/images';
 import { shareFile } from '../lib/share';
 import { shortModel } from '../lib/util';
-import { toast } from '../store/data';
+import { toast, useUi } from '../store/data';
 import { useModelMeta, useModelTests } from '../store/modelMeta';
 import { modelKey, useSettings } from '../store/settings';
 import { useRouter } from 'expo-router';
 import { useColors } from '../theme';
 import { BenchSheet, DetailSheet, PlaySheet } from './ModelSheets';
-import { Button, Card, Chip, Dialog, Empty, Field, Icon, IconButton, Sheet, T, haptic } from './ui/kit';
+import { MenuIcon } from './ui/MenuIcon';
+import { Button, Card, Chip, Dialog, Empty, Group, Icon, IconButton, Row, Sheet, T, haptic } from './ui/kit';
 
 const TABS: [MdUi['tab'], string][] = [['all', 'الكل'], ['fav', 'المفضلة'], ['on', 'المفعّلة'], ['used', 'المستخدمة']];
 const CAPS: [MdUi['cap'], string][] = [['all', 'الكل'], ['reason', 'تفكير'], ['vision', 'رؤية'], ['params', 'معاملات مخصصة']];
@@ -24,7 +26,7 @@ const STS: [MdUi['st'], string][] = [['all', 'الكل'], ['ok', 'سليم'], ['
 const SORTS: [MdUi['sort'], string][] = [['name', 'الاسم'], ['used', 'الأكثر استخدامًا'], ['recent', 'الأحدث استخدامًا'], ['speed', 'الأسرع'], ['ctx', 'الأكبر سياقًا'], ['ep', 'النقطة']];
 const hasP = (p?: Record<string, unknown>) => !!p && ['temperature', 'top_p', 'max_tokens'].some((k) => typeof p[k] === 'number');
 
-export function ModelsPro({ onAdd }: { onAdd: () => void }) {
+export function ModelsPro() {
   const c = useColors();
   const router = useRouter();
   const endpoints = useSettings((s) => s.endpoints);
@@ -34,6 +36,8 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
   const { meta, fav, use, setFav, toggleFav } = useModelMeta();
   const tests = useModelTests((s) => s.t);
 
+  const setSidebar = useUi((s) => s.setSidebar);
+  const [searching, setSearching] = useState(false);
   const [ui, setUi] = useState<MdUi>(defaultMdUi());
   const [limit, setLimit] = useState(60);
   const [multi, setMulti] = useState(false);
@@ -41,6 +45,7 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
   const [filt, setFilt] = useState(false);
   const [over, setOver] = useState(false);
   const [detail, setDetail] = useState<ModelItem | null>(null);
+  const [acts, setActs] = useState<ModelItem | null>(null);
   const [play, setPlay] = useState<ModelItem | null>(null);
   const [bench, setBench] = useState<ModelItem[] | null>(null);
   const [del, setDel] = useState<string[] | null>(null);
@@ -61,7 +66,7 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
   const pickedItems = all.filter((i) => picked.includes(i.key));
 
   const useIt = (it: ModelItem) => {
-    if (!it.ep.enabled) return toast('نقطة الاتصال معطّلة — فعّلها من «نقاط الاتصال»');
+    if (!it.ep.enabled) return toast('نقطة الاتصال معطّلة — فعّلها من الإعدادات ← المفاتيح ونقاط الاتصال');
     useSettings.getState().toggleModel(it.ep.id, it.m.id, true);
     useSettings.getState().select(it.ep.id, it.m.id);
     toast('تم اختيار النموذج: ' + shortModel(it.m.id));
@@ -109,47 +114,58 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
     </View>
   );
 
+  const tabBtn = (k: MdUi['tab'], label: string, n: number) => (
+    <Pressable key={k} onPress={() => { haptic(); set({ tab: k }); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 42, borderBottomWidth: 2.5, borderBottomColor: ui.tab === k ? c.accent : 'transparent', marginBottom: -1 }}>
+      <T size={14} weight="medium" color={ui.tab === k ? 'accent' : 'text2'}>{label}</T>
+      <T size={12} color="muted">{n}</T>
+    </Pressable>
+  );
+  const allSelected = view.length > 0 && view.every((i) => picked.includes(i.key));
+
   return (
-    <>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        <Field style={{ flex: 1 }} placeholder="ابحث في النماذج والأسماء والملاحظات…" value={ui.q} onChangeText={(q) => set({ q })} ltr />
-        <IconButton name="sliders" active={filtersActive(ui)} onPress={() => setFilt(true)} label="تصفية" />
-        <IconButton name="bar-chart-2" onPress={() => setOver(true)} label="نظرة عامة" />
-        <IconButton name="check-square" active={multi} onPress={() => { setMulti((m) => !m); setPicked([]); }} label="تحديد متعدد" />
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, height: 56 }}>
+        <Pressable onPress={() => { haptic(); setSidebar(true); }} accessibilityLabel="القائمة" style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}><MenuIcon /></Pressable>
+        <T size={20} weight="bold" style={{ flex: 1 }}>النماذج</T>
+        <IconButton name="search" label="بحث" active={searching || !!ui.q} onPress={() => { setSearching((v) => !v); set({ q: '' }); }} />
+        <IconButton name="sliders" label="تصفية وترتيب" active={filtersActive(ui)} onPress={() => setFilt(true)} />
+        <IconButton name="bar-chart-2" label="نظرة عامة" onPress={() => setOver(true)} />
+        <IconButton name="check-square" label="تحديد متعدد" active={multi} onPress={() => { setMulti((m) => !m); setPicked([]); }} />
       </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-        {TABS.map(([k, l]) => <Chip key={k} label={`${l} · ${counts[k]}`} active={ui.tab === k} onPress={() => set({ tab: k })} />)}
-      </ScrollView>
-      {endpoints.length > 1 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          <Chip label="كل النقاط" active={ui.ep === 'all'} onPress={() => set({ ep: 'all' })} />
-          {endpoints.map((e) => <Chip key={e.id} label={`${hostOf(e.url)} · ${e.models.length}`} active={ui.ep === e.id} onPress={() => set({ ep: e.id })} />)}
-        </ScrollView>
+      {searching ? (
+        <View style={{ marginHorizontal: 16, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1.5, borderBottomColor: c.accent, height: 44 }}>
+          <Icon name="search" size={18} color={c.accent} />
+          <TextInput cursorColor={c.accent} selectionColor={c.accent + '55'} selectionHandleColor={c.accent} autoFocus value={ui.q} onChangeText={(q) => set({ q })} placeholder="بحث" placeholderTextColor={c.muted} style={{ flex: 1, color: c.text, fontSize: 15, textAlign: 'auto' }} />
+        </View>
       ) : null}
-      {filtersActive(ui) ? <Button title="إعادة ضبط التصفية" kind="ghost" small icon="x" onPress={() => set({ q: '', cap: 'all', ep: 'all', st: 'all', fam: 'all' })} /> : null}
-
       {multi ? (
-        <Card style={{ gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <T weight="bold" style={{ flex: 1 }}>{picked.length ? picked.length + ' محدد' : 'اضغط على النماذج لتحديدها'}</T>
-            <Button title={view.length && view.every((i) => picked.includes(i.key)) ? 'إلغاء التحديد' : 'تحديد الكل'} kind="ghost" small onPress={() => setPicked(view.length && view.every((i) => picked.includes(i.key)) ? [] : view.map((i) => i.key))} />
-          </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            <Button title="مقارنة أداء" icon="activity" small disabled={picked.length < 2} onPress={() => setBench(pickedItems.slice(0, 8))} />
-            <Button title="تفعيل" kind="ghost" small disabled={!picked.length} onPress={() => setOn(picked, true)} />
-            <Button title="تعطيل" kind="ghost" small disabled={!picked.length} onPress={() => setOn(picked, false)} />
-            <Button title="مفضلة" icon="star" kind="ghost" small disabled={!picked.length} onPress={() => setFav(picked, !picked.every((k) => fc.fav.has(k)))} />
-            <Button title="اختبار" icon="clock" kind="ghost" small disabled={!picked.length} onPress={() => { toast(`يختبر ${pickedItems.length} نموذجًا…`); void testMany(pickedItems).then((r) => toast(`اكتمل الاختبار — ناجح: ${r.ok} · فاشل: ${r.bad}`)); }} />
-            <Button title="حذف" icon="trash-2" kind="danger" small disabled={!picked.length} onPress={() => setDel(picked)} />
-          </View>
-          {picked.length > 8 ? <T size={11.5} color="muted">المقارنة تشمل أول 8 نماذج فقط.</T> : null}
-        </Card>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
+          <Button small kind="soft" title={allSelected ? 'إلغاء التحديد' : 'تحديد الكل'} onPress={() => setPicked(allSelected ? [] : view.map((i) => i.key))} />
+          <Button small kind="soft" icon="activity" title="مقارنة أداء" disabled={picked.length < 2} onPress={() => setBench(pickedItems.slice(0, 8))} />
+          <Button small kind="soft" title="تفعيل" disabled={!picked.length} onPress={() => setOn(picked, true)} />
+          <Button small kind="soft" title="تعطيل" disabled={!picked.length} onPress={() => setOn(picked, false)} />
+          <Button small kind="soft" icon="star" title="مفضلة" disabled={!picked.length} onPress={() => setFav(picked, !picked.every((k) => fc.fav.has(k)))} />
+          <Button small kind="soft" icon="clock" title="اختبار" disabled={!picked.length} onPress={() => { toast(`يختبر ${pickedItems.length} نموذجًا…`); void testMany(pickedItems).then((r) => toast(`اكتمل الاختبار — ناجح: ${r.ok} · فاشل: ${r.bad}`)); }} />
+          <Button small kind="danger" icon="trash-2" title="حذف" disabled={!picked.length} onPress={() => setDel(picked)} />
+          <T size={12.5} color="muted">{picked.length ? picked.length + ' محدد' : ''}</T>
+        </View>
       ) : null}
+      <View style={{ flexDirection: 'row', gap: 4, marginHorizontal: 16, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: c.border }}>
+        {TABS.map(([k, l]) => tabBtn(k, l, counts[k]))}
+      </View>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 4, gap: 12 }} keyboardShouldPersistTaps="handled">
+      <Pressable onPress={() => router.push('/local')} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 18, backgroundColor: pressed ? c.surface3 : c.accentSoft })}>
+        <Icon name="smartphone" size={22} color={c.accent} />
+        <View style={{ flex: 1 }}>
+          <T weight="semibold">نماذج على الجهاز (llama.cpp)</T>
+          <T size={12.5} color="text2">نزّل نموذجًا واعمل دون إنترنت</T>
+        </View>
+        <Icon name="chevron-left" size={18} color={c.muted} />
+      </Pressable>
 
       {shown.length === 0 ? (
         <Empty icon="cpu" title={!endpoints.length ? 'لم تُضف أي نقطة اتصال بعد' : filtersActive(ui) ? 'لا نتائج مطابقة للتصفية' : ui.tab === 'fav' ? 'لا توجد نماذج مفضلة بعد' : ui.tab === 'used' ? 'لم تستخدم أي نموذج بعد' : 'لا توجد نماذج هنا'}
-          sub={!endpoints.length ? 'اضغط + لإضافة نقطة اتصال.' : 'من تبويب «نقاط الاتصال» اضغط «جلب النماذج».'} />
+          sub={!endpoints.length ? 'أضف نقطة اتصال من الإعدادات ← المفاتيح ونقاط الاتصال.' : 'أضف نقطة اتصال أو اجلب نماذجها من الإعدادات ← المفاتيح ونقاط الاتصال.'} />
       ) : null}
 
       {shown.map((it) => {
@@ -162,6 +178,7 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
         const off = !it.ep.enabled || !it.m.on;
         const isSel = picked.includes(it.key);
         const ctx = ctxOf(it.m.id);
+        const hasTags = on || second || !!capReason(it.m.id) || !!capVision(it.m.id) || hasP(params.models[modelKey(it.ep.id, it.m.id)] as any) || !!ctx || s !== 'none';
         return (
           <Pressable
             key={it.key}
@@ -169,26 +186,30 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
             onLongPress={() => { if (!multi) { setMulti(true); setPicked([it.key]); } }}
             style={{ opacity: off ? 0.62 : 1 }}
           >
-            <Card style={{ gap: 6, borderStartWidth: mt.color ? 4 : 1, borderStartColor: mt.color || c.border, borderColor: isSel ? c.accent : c.border, borderWidth: isSel ? 2 : 1 }}>
+            <Card style={{ gap: 8, borderRadius: 18, borderStartWidth: mt.color ? 4 : 1.5, borderStartColor: isSel ? c.accent : mt.color || c.border, borderColor: isSel ? c.accent : c.border, borderWidth: 1.5 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {multi ? <Icon name={isSel ? 'check-circle' : 'circle'} size={22} color={isSel ? c.accent : c.muted} /> : null}
+                <T size={16} weight="semibold" ltr={!mt.alias} numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, minWidth: 0 }}>{mt.alias || it.m.id}</T>
+                {isFav ? <Icon name="star" size={17} color={c.accent} /> : null}
+                {!multi ? <IconButton name="more-vertical" size={19} label="المزيد" onPress={() => setActs(it)} style={{ width: 34, height: 34 }} /> : null}
+              </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                {multi ? <Icon name={isSel ? 'check-square' : 'square'} size={18} color={isSel ? c.accent : c.muted} /> : null}
-                {on ? <T size={11} color="accent" style={{ backgroundColor: c.accentSoft, paddingHorizontal: 8, borderRadius: 8 }}>الحالي</T> : null}
-                {second ? <T size={11} color="accent" style={{ backgroundColor: c.accentSoft, paddingHorizontal: 8, borderRadius: 8 }}>الثاني</T> : null}
                 {it.ep.kind === 'local' || it.ep.proto === 'llama' ? <T size={11} color="muted">محلي</T> : null}
                 {!it.ep.enabled ? <T size={11} color="danger">نقطة معطّلة</T> : !it.m.on ? <T size={11} color="muted">معطّل</T> : null}
-                <View style={{ flex: 1 }} />
-                {isFav ? <Icon name="star" size={15} color={c.accent} /> : null}
+                <T size={12} color="muted" ltr numberOfLines={1} style={{ flexShrink: 1 }}>{mt.alias ? it.m.id + ' · ' : ''}{hostOf(it.ep.url)}</T>
               </View>
-              <T weight="bold" ltr={!mt.alias} numberOfLines={1}>{mt.alias || it.m.id}</T>
-              <T size={12} color="muted" ltr numberOfLines={1}>{mt.alias ? it.m.id + ' · ' : ''}{hostOf(it.ep.url)}</T>
               {mt.note ? <T size={12.5} color="text2" numberOfLines={2}>{mt.note}</T> : null}
+              {hasTags ? (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                 {capReason(it.m.id) ? <Tag label="تفكير" /> : null}
                 {capVision(it.m.id) ? <Tag label="رؤية" /> : null}
                 {hasP(params.models[modelKey(it.ep.id, it.m.id)] as any) ? <Tag label="معاملات مخصصة" accent /> : null}
                 {ctx ? <Tag label={'≈' + fmtCtx(ctx)} /> : null}
-                {s === 'busy' ? <Tag label="يختبر…" /> : s === 'ok' ? <Tag label={'✓ ' + (lat != null ? secs(lat) : '')} accent /> : s === 'bad' ? <Tag label="فشل الاختبار" bad /> : null}
+                {s === 'busy' ? <Tag label="يختبر…" /> : s === 'ok' ? <Tag label={'✓ ' + (lat != null ? secs(lat) : '')} accent /> : s === 'bad' ? <Tag label="فشل" bad /> : null}
+                {on ? <Tag label="الحالي" accent /> : null}
+                {second ? <Tag label="الثاني" accent /> : null}
               </View>
+              ) : null}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <T size={11.5} color="muted" style={{ flex: 1 }}>{use[it.key]?.n ? use[it.key].n + ' استخدام' : 'لم يُستخدم بعد'}</T>
                 {!multi ? <Button title={on ? 'قيد الاستخدام' : 'استخدام'} kind={on ? 'soft' : 'ghost'} small disabled={on || !it.ep.enabled} onPress={() => useIt(it)} /> : null}
@@ -198,17 +219,25 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
         );
       })}
       {view.length > shown.length ? <Button title={`عرض المزيد (${view.length - shown.length})`} kind="ghost" onPress={() => setLimit((l) => l + 60)} /> : null}
+      </ScrollView>
 
       {/* التصفية */}
       <Sheet visible={filt} onClose={() => setFilt(false)} title="تصفية وترتيب" full>
         <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
           <Group2 title="القدرات (تقدير بحسب الاسم)">{CAPS.map(([k, l]) => <Chip key={k} label={l} active={ui.cap === k} onPress={() => set({ cap: k })} />)}</Group2>
           <Group2 title="حالة الاتصال">{STS.map(([k, l]) => <Chip key={k} label={l} active={ui.st === k} onPress={() => set({ st: k })} />)}</Group2>
+          {endpoints.length > 1 ? (
+            <Group2 title="النقطة">
+              <Chip label="كل النقاط" active={ui.ep === 'all'} onPress={() => set({ ep: 'all' })} />
+              {endpoints.map((e) => <Chip key={e.id} label={`${hostOf(e.url)} · ${e.models.length}`} active={ui.ep === e.id} onPress={() => set({ ep: e.id })} />)}
+            </Group2>
+          ) : null}
           <Group2 title="العائلة">
             <Chip label="الكل" active={ui.fam === 'all'} onPress={() => set({ fam: 'all' })} />
             {fams.map((f) => <Chip key={f} label={f} active={ui.fam === f} onPress={() => set({ fam: f })} />)}
           </Group2>
           <Group2 title="الترتيب">{SORTS.map(([k, l]) => <Chip key={k} label={l} active={ui.sort === k} onPress={() => set({ sort: k })} />)}</Group2>
+          {filtersActive(ui) ? <Button title="إعادة ضبط التصفية" kind="ghost" icon="x" onPress={() => set({ q: '', cap: 'all', ep: 'all', st: 'all', fam: 'all' })} /> : null}
           <Button title="تم" onPress={() => setFilt(false)} />
         </ScrollView>
       </Sheet>
@@ -264,6 +293,23 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
         </ScrollView>
       </Sheet>
 
+      <Sheet visible={!!acts} onClose={() => setActs(null)} title={acts ? (meta[acts.key]?.alias || acts.m.id) : undefined}>
+        <View style={{ padding: 16 }}>
+          {acts ? (
+            <Group>
+              <Row icon="info" title="التفاصيل والتعديل" onPress={() => { const i = acts; setActs(null); setTimeout(() => setDetail(i), 250); }} />
+              <Row icon="check-circle" title="استخدام هذا النموذج" onPress={() => { useIt(acts); setActs(null); }} />
+              <Row icon="star" title={fc.fav.has(acts.key) ? 'إزالة من المفضلة' : 'إضافة للمفضلة'} onPress={() => { toggleFav(acts.key); setActs(null); }} />
+              <Row icon={acts.m.on ? 'eye-off' : 'eye'} title={acts.m.on ? 'تعطيل النموذج' : 'تفعيل النموذج'} onPress={() => { setOn([acts.key], !acts.m.on); setActs(null); }} />
+              <Row icon="clock" title="اختبار الاتصال" onPress={() => { const i = acts; setActs(null); toast('يختبر النموذج…'); void testModel(i).then((ok) => toast(ok ? 'الاتصال سليم' : 'فشل الاختبار')); }} />
+              <Row icon="send" title="ساحة التجربة" onPress={() => { const i = acts; setActs(null); setTimeout(() => setPlay(i), 250); }} />
+              <Row icon="sliders" title="المعاملات" onPress={() => { goParams(acts); setActs(null); }} />
+              <Row icon="trash-2" title="حذف النموذج" danger onPress={() => { const i = acts; setActs(null); setTimeout(() => setDel([i.key]), 250); }} />
+            </Group>
+          ) : null}
+        </View>
+      </Sheet>
+
       <DetailSheet item={detail} onClose={() => setDetail(null)} onPlay={setPlay} onDelete={(i) => setDel([i.key])} onParams={goParams} />
       <PlaySheet item={play} onClose={() => setPlay(null)} />
       <BenchSheet items={bench} onClose={() => setBench(null)} />
@@ -272,13 +318,13 @@ export function ModelsPro({ onAdd }: { onAdd: () => void }) {
         actions={[{ title: 'حذف', kind: 'danger', onPress: () => { if (del) remove(del); setDel(null); } }, { title: 'إلغاء', onPress: () => setDel(null) }]} />
       <Dialog visible={!!dedupe} title="تنظيف المكررات" message={`يُبقي نسخة واحدة من كل نموذج مكرر (يُفضَّل المفعّل) ويحذف ${dedupe?.length ?? 0} من قائمتك فقط.`} onClose={() => setDedupe(null)}
         actions={[{ title: 'تنظيف', onPress: () => { if (dedupe) remove(dedupe); setDedupe(null); } }, { title: 'إلغاء', onPress: () => setDedupe(null) }]} />
-    </>
+    </SafeAreaView>
   );
 }
 
 function Tag({ label, accent, bad }: { label: string; accent?: boolean; bad?: boolean }) {
   const c = useColors();
-  return <T size={11} color={bad ? 'danger' : accent ? 'accent' : 'text2'} style={{ backgroundColor: bad ? c.dangerSoft : accent ? c.accentSoft : c.surface2, paddingHorizontal: 8, borderRadius: 8 }}>{label}</T>;
+  return <T size={11} numberOfLines={1} color={bad ? 'danger' : accent ? 'accent' : 'text2'} style={{ backgroundColor: bad ? c.dangerSoft : accent ? c.accentSoft : c.surface2, paddingHorizontal: 8, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>{label}</T>;
 }
 function Group2({ title, children }: { title: string; children: React.ReactNode }) {
   return (
