@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 import { hostOf } from '../src/api/providers';
 import { fetchModels } from '../src/api/stream';
 import { EndpointForm } from '../src/components/EndpointForm';
+import { ModelsPro } from '../src/components/ModelsPro';
 import { Button, Card, Empty, Field, IconButton, Icon, Screen, Switch, T } from '../src/components/ui/kit';
 import { toast } from '../src/store/data';
 import { useSettings } from '../src/store/settings';
@@ -13,6 +14,7 @@ export default function Models() {
   const c = useColors();
   const router = useRouter();
   const { endpoints, sel, select, toggleModel, addModel, setModels, updateEndpoint } = useSettings();
+  const [tab, setTab] = useState<'models' | 'eps'>('models');
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -50,7 +52,16 @@ export default function Models() {
         </View>
         <Icon name="chevron-left" size={18} color={c.muted} />
       </Pressable>
-      {endpoints.length === 0 ? (
+      <View style={{ flexDirection: 'row', backgroundColor: c.surface2, borderRadius: 14, padding: 4 }}>
+        {([['models', 'النماذج'], ['eps', 'نقاط الاتصال']] as const).map(([k, l]) => (
+          <Pressable key={k} onPress={() => setTab(k)} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', height: 38, borderRadius: 10, backgroundColor: tab === k ? c.surface3 : 'transparent' }}>
+            <T size={13.5} weight={tab === k ? 'bold' : 'medium'} color={tab === k ? 'text' : 'muted'}>{l}</T>
+          </Pressable>
+        ))}
+      </View>
+      {tab === 'models' ? (
+        <ModelsPro onAdd={() => setAdding(true)} />
+      ) : endpoints.length === 0 ? (
         <>
           <Empty icon="cpu" title="لا توجد نقاط اتصال" sub="أضف مفتاح API أو خادمًا محليًا لتظهر نماذجك هنا." />
           <Button title="إضافة نقطة اتصال" icon="plus" onPress={() => setAdding(true)} />

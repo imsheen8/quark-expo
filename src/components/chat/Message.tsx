@@ -1,8 +1,9 @@
 import * as Clipboard from 'expo-clipboard';
-import * as Speech from 'expo-speech';
+import { speak as speakText, useSpeaker } from '../../api/voice';
 import { useState } from 'react';
 import { Image, Pressable, Share, View } from 'react-native';
 import type { Msg } from '../../api/types';
+import { versionCount, versionIndex } from '../../lib/branches';
 import { toast } from '../../store/data';
 import { useColors } from '../../theme';
 import { Icon, IconButton, T, haptic } from '../ui/kit';
@@ -48,30 +49,22 @@ interface Props {
   onEdit?: (m: Msg) => void;
   onDelete?: (m: Msg) => void;
   onImage?: (uri: string) => void;
+  /** الانتقال بين نسخ التعديل */
+  onSwitch?: (m: Msg, k: number) => void;
+  /** تفريع المحادثة إلى محادثة جديدة حتى هذه الرسالة */
+  onFork?: (m: Msg) => void;
 }
 
-export function MessageView({ msg, isLast, onRegenerate, onEdit, onDelete, onImage }: Props) {
+export function MessageView({ msg, isLast, onRegenerate, onEdit, onDelete, onImage, onSwitch, onFork }: Props) {
   const c = useColors();
-  const [speaking, setSpeaking] = useState(false);
+  const speaking = useSpeaker((st) => st.key === msg.id);
+  const speakLoading = useSpeaker((st) => st.key === msg.id && st.loading);
 
   const copy = async () => {
     await Clipboard.setStringAsync(msg.content);
     toast('تم النسخ');
   };
-  const speak = () => {
-    if (speaking) {
-      Speech.stop();
-      setSpeaking(false);
-      return;
-    }
-    setSpeaking(true);
-    Speech.speak(msg.content.replace(/```[\s\S]*?```/g, ' '), {
-      language: /[؀-ۿ]/.test(msg.content) ? 'ar' : undefined,
-      onDone: () => setSpeaking(false),
-      onStopped: () => setSpeaking(false),
-      onError: () => setSpeaking(false),
-    });
-  };
+  const speak = () => { void speakText(msg.content, msg.id); };
 
   if (msg.role === 'user') {
     return (
@@ -94,7 +87,14 @@ export function MessageView({ msg, isLast, onRegenerate, onEdit, onDelete, onIma
           ))}
           {msg.content ? <T selectable size={15.5} style={{ lineHeight: 25 }}>{msg.content}</T> : null}
         </View>
-        <View style={{ flexDirection: 'row' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {versionCount(msg) > 1 && onSwitch ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <IconButton name="chevron-right" size={16} onPress={() => onSwitch(msg, versionIndex(msg) - 1)} label="النسخة السابقة" style={{ width: 28, height: 32, opacity: versionIndex(msg) > 0 ? 1 : 0.3 }} />
+              <T size={12} color="text2" style={{ minWidth: 30, textAlign: 'center' }}>{versionIndex(msg) + 1}/{versionCount(msg)}</T>
+              <IconButton name="chevron-left" size={16} onPress={() => onSwitch(msg, versionIndex(msg) + 1)} label="النسخة التالية" style={{ width: 28, height: 32, opacity: versionIndex(msg) < versionCount(msg) - 1 ? 1 : 0.3 }} />
+            </View>
+          ) : null}
           <IconButton name="copy" size={15} onPress={copy} label="نسخ" style={{ width: 32, height: 32 }} />
           {onEdit ? <IconButton name="edit-2" size={15} onPress={() => onEdit(msg)} label="تعديل" style={{ width: 32, height: 32 }} /> : null}
           {onDelete ? <IconButton name="trash-2" size={15} onPress={() => onDelete(msg)} label="حذف" style={{ width: 32, height: 32 }} /> : null}
@@ -118,10 +118,12 @@ export function MessageView({ msg, isLast, onRegenerate, onEdit, onDelete, onIma
         <Markdown text={msg.content.replace(/```api_call[\s\S]*?```/g, '')} />
       )}
       {msg.sources?.length ? <SourceChips sources={msg.sources} /> : null}
+      {msg.skills?.length ? <T size={12} color="muted">✦ مهارات: {msg.skills.join('، ')}</T> : null}
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {!msg.error ? <IconButton name="copy" size={16} onPress={copy} label="نسخ" style={{ width: 34, height: 34 }} /> : null}
-        {!msg.error ? <IconButton name={speaking ? 'volume-x' : 'volume-2'} size={16} onPress={speak} label="قراءة" active={speaking} style={{ width: 34, height: 34 }} /> : null}
+        {!msg.error ? <IconButton name={speakLoading ? 'loader' : speaking ? 'volume-x' : 'volume-2'} size={16} onPress={speak} label="قراءة" active={speaking} style={{ width: 34, height: 34 }} /> : null}
         {!msg.error ? <IconButton name="share-2" size={16} onPress={() => Share.share({ message: msg.content })} label="مشاركة" style={{ width: 34, height: 34 }} /> : null}
+        {!msg.error && onFork ? <IconButton name="git-branch" size={16} onPress={() => onFork(msg)} label="تفريع إلى محادثة جديدة" style={{ width: 34, height: 34 }} /> : null}
         {isLast && onRegenerate ? <IconButton name="refresh-cw" size={16} onPress={onRegenerate} label="إعادة التوليد" style={{ width: 34, height: 34 }} /> : null}
         {onDelete ? <IconButton name="trash-2" size={16} onPress={() => onDelete(msg)} label="حذف" style={{ width: 34, height: 34 }} /> : null}
         <View style={{ flex: 1 }} />

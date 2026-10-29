@@ -1,6 +1,8 @@
 import * as Clipboard from 'expo-clipboard';
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import { canPreview } from '../../api/previewCore';
+import { PreviewFull, PreviewView } from './LivePreview';
 import { highlight, parseMarkdown, type Block, type Inline } from '../../lib/mdParse';
 import { toast } from '../../store/data';
 import { useColors, useScale } from '../../theme';
@@ -40,11 +42,26 @@ function Inl({ inl, base }: { inl: Inline[]; base?: object }) {
 function CodeBlock({ lang, code, open }: { lang: string; code: string; open: boolean }) {
   const c = useColors();
   const toks = useMemo(() => highlight(code, lang), [code, lang]);
+  const [prev, setPrev] = useState(false);
+  const [full, setFull] = useState(false);
+  const can = !open && canPreview(lang, code);
   const col = { c: c.tkC, s: c.tkS, n: c.tkN, k: c.tkK, '': c.codeFg } as const;
   return (
     <View style={{ borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: c.codeBorder, backgroundColor: c.codeBg, marginVertical: 6 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: c.codeHead, paddingHorizontal: 12, height: 36 }}>
         <T size={12} color={c.codeMute} ltr style={{ flex: 1 }}>{lang || 'code'}</T>
+        {can ? (
+          <Pressable onPress={() => { haptic(); setPrev((v) => !v); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginEnd: 14 }} hitSlop={8}>
+            <Icon name={prev ? 'code' : 'eye'} size={14} color={c.codeMute} />
+            <T size={12} color={c.codeMute}>{prev ? 'الكود' : 'معاينة'}</T>
+          </Pressable>
+        ) : null}
+        {can && prev ? (
+          <Pressable onPress={() => { haptic(); setFull(true); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginEnd: 14 }} hitSlop={8}>
+            <Icon name="maximize-2" size={14} color={c.codeMute} />
+            <T size={12} color={c.codeMute}>ملء الشاشة</T>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={async () => {
             haptic();
@@ -58,14 +75,16 @@ function CodeBlock({ lang, code, open }: { lang: string; code: string; open: boo
           <T size={12} color={c.codeMute}>نسخ</T>
         </Pressable>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 12 }} style={{ direction: 'ltr' }}>
+      {can && prev ? <PreviewView code={code} lang={lang} height={340} /> : null}
+      {can && full ? <PreviewFull code={code} lang={lang} onClose={() => setFull(false)} /> : null}
+      {can && prev ? null : <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 12 }} style={{ direction: 'ltr' }}>
         <Text selectable style={{ fontFamily: FONT.mono, fontSize: 13, lineHeight: 20, color: c.codeFg, writingDirection: 'ltr', textAlign: 'left' }}>
           {toks.map((t, i) => (
             <Text key={i} style={{ color: col[t.k] }}>{t.v}</Text>
           ))}
           {open ? ' ▍' : ''}
         </Text>
-      </ScrollView>
+      </ScrollView>}
     </View>
   );
 }

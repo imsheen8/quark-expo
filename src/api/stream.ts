@@ -4,6 +4,7 @@ import { buildRequest, modelsRequest, rejectedField, type BuildArgs } from './pa
 import { LineBuffer, parseEvent, parseFull, parseModelList, sseData } from './parsers';
 import { localModelIds, localStream } from './local';
 import type { Chunk, Endpoint } from './types';
+import { logErr } from '../store/logs';
 
 type Args = Omit<BuildArgs, 'stream' | 'drop'> & { signal?: AbortSignal };
 
@@ -17,6 +18,7 @@ async function post(ep: Endpoint, a: BuildArgs, signal?: AbortSignal) {
       res = await xfetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal });
     } catch (e) {
       if ((e as any)?.name === 'AbortError') throw e;
+      logErr('net', `${ep.label || ep.url} · ${netErrorText(e, req.url)}`);
       throw new Error(netErrorText(e, req.url));
     }
     if (res.ok) return res;
@@ -28,8 +30,10 @@ async function post(ep: Endpoint, a: BuildArgs, signal?: AbortSignal) {
       drop.add(bad);
       continue;
     }
+    logErr('net', `${ep.label || ep.url} · ${a.model} · ${lastErr}`);
     throw new Error(lastErr);
   }
+  logErr('net', `${ep.label || ep.url} · ${a.model} · ${lastErr}`);
   throw new Error(lastErr);
 }
 

@@ -25,6 +25,33 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # توقيع ثابت: أضف الأسرار الأربعة (انظر README). بدونها يُوقَّع بمفتاح debug فلا يُحدَّث التطبيق فوق نسخة موقّعة بمفتاح آخر.
+      - name: Prepare release signing
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          n=0
+          for v in "$KS_B64" "$KS_PASS" "$KS_ALIAS" "$KEY_PASS"; do [ -n "$v" ] && n=$((n+1)); done
+          if [ "$n" = 0 ]; then
+            echo "::warning::لا أسرار توقيع — سيُوقَّع الـ APK بمفتاح debug المؤقت."
+          elif [ "$n" != 4 ]; then
+            echo "::error::أسرار التوقيع ناقصة ($n من 4). المطلوب: ANDROID_KEYSTORE_BASE64 و ANDROID_KEYSTORE_PASSWORD و ANDROID_KEY_ALIAS و ANDROID_KEY_PASSWORD"
+            exit 1
+          else
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/quark-release.jks"
+            echo "::add-mask::$KS_PASS"
+            {
+              echo "QUARK_KEYSTORE_FILE=$RUNNER_TEMP/quark-release.jks"
+              echo "QUARK_KEYSTORE_PASSWORD=$KS_PASS"
+              echo "QUARK_KEY_ALIAS=$KS_ALIAS"
+              echo "QUARK_KEY_PASSWORD=$KEY_PASS"
+            } >> "$GITHUB_ENV"
+            echo "تم تجهيز مفتاح التوقيع الثابت."
+          fi
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
 
@@ -58,6 +85,12 @@ jobs:
           mkdir -p out
           cp android/app/build/outputs/apk/release/app-release.apk out/QUARK-AI.apk
           ls -la out
+
+      - name: Show signing certificate
+        run: |
+          AS=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$AS" verify --print-certs out/QUARK-AI.apk | grep -E "Signer #1 certificate (DN|SHA-256)" || true
+          if [ -n "$QUARK_KEYSTORE_FILE" ]; then echo "موقّع بالمفتاح الثابت"; else echo "موقّع بمفتاح debug المؤقت"; fi
 
       - uses: actions/upload-artifact@v4
         with:

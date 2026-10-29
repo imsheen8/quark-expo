@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useColorScheme } from 'react-native';
 import { useSettings } from '../store/settings';
-import { buildColors, FONT_SCALE, THEMES, type Colors, type Mode } from './themes';
+import { buildColors, FONT_SCALE, THEMES, validThemeId, type Colors, type Mode } from './themes';
 
 export function useMode(): Mode {
   const sys = useColorScheme();
@@ -11,7 +11,7 @@ export function useMode(): Mode {
 
 export function useColors(): Colors {
   const mode = useMode();
-  const id = useSettings((s) => s.themeSel[mode]);
+  const id = validThemeId(mode, useSettings((s) => s.themeSel[mode]));
   return useMemo(() => buildColors(mode, THEMES.find((t) => t.mode === mode && t.id === id)), [mode, id]);
 }
 

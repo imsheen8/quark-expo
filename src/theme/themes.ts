@@ -17,22 +17,58 @@ export interface ThemeDef {
   mode: Mode;
   name: string;
   bg?: string; surface?: string; text?: string; accent?: string;
+  /** تجاوزات دقيقة تُطبَّق فوق الألوان المشتقة (مثل ثيم GPT) */
+  over?: Partial<Colors>;
 }
 
 export const THEMES: ThemeDef[] = [
   { id: 'default', mode: 'dark', name: 'الافتراضي' },
-  { id: 'midnight', mode: 'dark', name: 'منتصف الليل', bg: '#0f1420', surface: '#172033', text: '#e6ecf7', accent: '#5b8def' },
-  { id: 'forest', mode: 'dark', name: 'غابة', bg: '#0f1a14', surface: '#16251c', text: '#e4efe7', accent: '#4f9d69' },
-  { id: 'violet', mode: 'dark', name: 'بنفسجي', bg: '#17121f', surface: '#211a2e', text: '#ece6f5', accent: '#b66dd6' },
-  { id: 'amber', mode: 'dark', name: 'عنبر', bg: '#1a1510', surface: '#261e16', text: '#f0e6d8', accent: '#d4a017' },
-  { id: 'oled', mode: 'dark', name: 'أسود نقي', bg: '#000000', surface: '#0e0e0e', text: '#eaeaea', accent: '#e07a5f' },
+  // ثيم GPT — ألوان مطابقة لثيم «gpt» في تطبيق Odysseus
+  {
+    id: 'gpt', mode: 'dark', name: 'GPT',
+    bg: '#212121', surface: '#2f2f2f', text: '#ececec', accent: '#949494',
+    over: {
+      sidebar: '#171717', surface2: '#2f2f2f', surface3: '#424242', border: '#424242', bubble: '#2f2f2f',
+      text2: '#c5c5c5', muted: '#8e8e8e', accentSoft: 'rgba(148,148,148,0.18)', onAccent: '#171717',
+      codeBg: '#171717', codeHead: '#2f2f2f', codeBorder: '#424242',
+    },
+  },
+  // ثيم Claude — ألوان مطابقة لثيم «claude» في تطبيق Odysseus
+  {
+    id: 'claude', mode: 'dark', name: 'Claude',
+    bg: '#1f1e1b', surface: '#2b2926', text: '#f5f1e8', accent: '#d97757',
+    over: {
+      sidebar: '#181715', border: '#514b43', surface2: '#35322e', surface3: '#47433d', bubble: '#2b2926',
+      text2: '#cfc9bb', muted: '#968f80', accentSoft: 'rgba(217,119,87,0.16)', onAccent: '#ffffff',
+      codeBg: '#171614', codeHead: '#2b2926', codeBorder: '#3d3933',
+    },
+  },
   { id: 'default', mode: 'light', name: 'الافتراضي' },
-  { id: 'snow', mode: 'light', name: 'ثلجي', bg: '#f5f8fc', surface: '#ffffff', text: '#17202e', accent: '#2f6fed' },
-  { id: 'mint', mode: 'light', name: 'نعناع', bg: '#f1f8f4', surface: '#ffffff', text: '#15251c', accent: '#2f9e5a' },
-  { id: 'rose', mode: 'light', name: 'وردي', bg: '#fbf3f6', surface: '#ffffff', text: '#2a1a21', accent: '#d6457a' },
-  { id: 'paper', mode: 'light', name: 'ورقي', bg: '#f6efe0', surface: '#fffaf0', text: '#2d2415', accent: '#b7791f' },
-  { id: 'white', mode: 'light', name: 'أبيض نقي', bg: '#ffffff', surface: '#f4f4f5', text: '#111111', accent: '#d97757' },
+  // نسخ فاتحة صُمّمت هنا (Odysseus ليس فيه نسخ فاتحة منهما)
+  {
+    id: 'gpt', mode: 'light', name: 'GPT',
+    bg: '#ffffff', surface: '#f4f4f4', text: '#0d0d0d', accent: '#5d5d5d',
+    over: {
+      sidebar: '#f9f9f9', surface2: '#ececec', surface3: '#e0e0e0', border: '#e5e5e5', bubble: '#f4f4f4',
+      text2: '#424242', muted: '#8e8e8e', accentSoft: 'rgba(93,93,93,0.12)', onAccent: '#ffffff',
+      codeBg: '#f9f9f9', codeHead: '#ececec', codeBorder: '#e0e0e0', codeFg: '#0d0d0d',
+    },
+  },
+  {
+    id: 'claude', mode: 'light', name: 'Claude',
+    bg: '#f5f1e8', surface: '#fffdf8', text: '#1f1e1b', accent: '#d97757',
+    over: {
+      sidebar: '#ece6d8', surface2: '#ebe5d6', surface3: '#ddd5c4', border: '#ddd5c4', bubble: '#ebe5d6',
+      text2: '#55524b', muted: '#8a867b', accentSoft: 'rgba(217,119,87,0.14)', onAccent: '#ffffff',
+      codeBg: '#ece6d8', codeHead: '#e2dac8', codeBorder: '#d6cdb9', codeFg: '#1f1e1b',
+    },
+  },
 ];
+
+/** معرّف ثيم صالح للوضع، وإلا «الافتراضي» (يعالج اختيارًا محفوظًا لثيم محذوف) */
+export function validThemeId(mode: Mode, id?: string): string {
+  return THEMES.some((t) => t.mode === mode && t.id === id) ? (id as string) : 'default';
+}
 
 const LIGHT: Colors = {
   mode: 'light', bg: '#faf9f5', sidebar: '#f3f1ea', surface: '#ffffff', surface2: '#ece9df', surface3: '#dfdbcd',
@@ -69,6 +105,7 @@ export function buildColors(mode: Mode, def?: ThemeDef): Colors {
     muted: mixHex(text, bg, 0.55),
     border: mixHex(bg, text, 0.12),
     bubble: mixHex(surface, text, 0.08),
+    ...(def.over ?? {}),
   };
 }
 

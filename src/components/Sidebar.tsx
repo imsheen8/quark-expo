@@ -1,3 +1,4 @@
+import { applyDefaultChatModel } from '../api/chains';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, Platform, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
@@ -65,6 +66,7 @@ export function Sidebar() {
   const newChat = () => {
     haptic();
     setCurrent(null);
+    applyDefaultChatModel();
     setOpen(false);
     router.replace('/');
   };
@@ -79,7 +81,7 @@ export function Sidebar() {
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, height: 52 }}>
-          <T weight="bold" size={21} style={{ flex: 1, fontFamily: Platform.select({ android: 'serif', ios: 'Georgia', default: 'serif' }), fontWeight: '700', letterSpacing: 1 }}>QUARK AI</T>
+          <T weight="bold" size={21} style={{ flex: 1, letterSpacing: 3 }}>QUARK AI</T>
           <Pressable onPress={() => { haptic(); setShowSearch((v) => !v); setQ(''); }} accessibilityLabel="بحث" style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: showSearch ? c.surface2 : 'transparent' }}>
             <Icon name="search" size={21} color={c.text} />
           </Pressable>

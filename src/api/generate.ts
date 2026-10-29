@@ -1,17 +1,21 @@
 import { activeModel, modelKey, useSettings } from '../store/settings';
 import { useChats, useStream } from '../store/chats';
-import { toast, useLibrary, useMemory, useUsage } from '../store/data';
+import { toast, useLibrary, useMemory, useSkillPins, useSkills, useUsage } from '../store/data';
+import { skBlock, skSelect } from './skillsCore';
+import { useModelMeta } from '../store/modelMeta';
 import { loadAll } from '../lib/images';
 import { extractRemember, memoryContext, pickMemories } from '../lib/memoryRank';
 import { estTokens, shortModel, uid } from '../lib/util';
 import { buildHistory } from './history';
 import { mergeUsage, splitThink } from './parsers';
-import { chatStream, completeOnce } from './stream';
+import { completeOnce } from './stream';
+import { applyDefaultChatModel, chatModels, completeChain, streamChain, utilModels } from './chains';
 import { agentLoop, fireTaskEvent, fireWebhooks, runApiCall, searchForChat, streamTurn } from './engines';
 import { wrapResult } from './agentCore';
 import { integPrompt, parseApiCall } from './integCore';
 import { useInteg } from '../store/features';
 import type { AgentStep, Chat, FileRef, ImageRef, Msg, Params, Usage } from './types';
+import { logErr } from '../store/logs';
 
 let controller: AbortController | null = null;
 
@@ -36,6 +40,11 @@ export function resolveParams(chat?: Chat, am = activeModel()): Params {
 }
 
 export function buildSystem(query: string): string {
+  return buildSystemEx(query).system;
+}
+
+/** يعيد موجّه النظام مع أسماء المهارات المحقونة (المثبّتة يدويًا ثم المطابقة تلقائيًا) */
+export function buildSystemEx(query: string, usePins = false): { system: string; skills: string[] } {
   const s = useSettings.getState();
   const persona = useLibrary.getState().items.find((i) => i.id === s.activePersonaId && i.kind === 'persona');
   const nm = s.profile.nick || s.profile.name;
@@ -51,11 +60,24 @@ export function buildSystem(query: string): string {
       mem.markUsed(picked.map((p) => p.id));
     }
   }
-  return parts.filter(Boolean).join('\n\n');
+  let skills: string[] = [];
+  const pins = usePins ? useSkillPins.getState().ids : [];
+  if (s.skills.enabled || pins.length) {
+    const sk = useSkills.getState();
+    const used = skSelect(query, sk.items, s.skills, pins);
+    if (used.length) {
+      parts.push(skBlock(used));
+      sk.markUsed(used.map((x) => x.id));
+      skills = used.map((x) => x.name);
+    }
+  }
+  return { system: parts.filter(Boolean).join('\n\n'), skills };
 }
 
 export interface Outgoing {
   text: string;
+  /** نسخ التعديل التي ترثها الرسالة الجديدة */
+  branch?: { vers: (Msg[] | null)[]; vi: number };
   imgs?: ImageRef[];
   files?: FileRef[];
 }
@@ -65,7 +87,7 @@ export async function sendMessage(o: Outgoing): Promise<void> {
   if (isBusy()) return;
   const st = useChats.getState();
   let chat = st.current();
-  if (!chat) chat = st.create();
+  if (!chat) { applyDefaultChatModel(); chat = st.create(); }
   const text = o.text.trim();
 
   const mem = useSettings.getState().memory;
@@ -75,7 +97,7 @@ export async function sendMessage(o: Outgoing): Promise<void> {
     toast('حُفظ في الذاكرة');
   }
 
-  const msg: Msg = { id: uid(), role: 'user', content: text, ts: Date.now(), ...(o.imgs?.length ? { imgs: o.imgs } : {}), ...(o.files?.length ? { files: o.files } : {}) };
+  const msg: Msg = { id: uid(), role: 'user', content: text, ts: Date.now(), ...(o.imgs?.length ? { imgs: o.imgs } : {}), ...(o.files?.length ? { files: o.files } : {}), ...(o.branch ? { vers: o.branch.vers, vi: o.branch.vi } : {}) };
   const isNew = chat.messages.length === 0;
   st.addMessage(chat.id, msg);
   if (isNew) { fireTaskEvent('newchat'); void fireWebhooks('session.created', { chatId: chat.id }); }
@@ -95,15 +117,19 @@ export async function regenerate(chatId: string): Promise<void> {
 }
 
 export async function generateReply(chatId: string): Promise<void> {
-  const am = activeModel();
   const store = useChats.getState();
   const chat = store.chats.find((c) => c.id === chatId);
   if (!chat) return;
+  // الرؤية: إن حملت آخر رسالة صورًا ونموذج المحادثة لا يدعمها يُستخدم نموذج الرؤية وبدائله
+  const lastU = [...chat.messages].reverse().find((m) => m.role === 'user');
+  const list = chatModels(!!lastU?.imgs?.length);
+  const am = list[0] ?? activeModel();
   if (!am) {
     store.addMessage(chatId, { id: uid(), role: 'assistant', content: 'لا يوجد نموذج محدد. أضف نقطة اتصال وفعّل نموذجًا من «النماذج» ثم اخترْه.', ts: Date.now(), error: true });
     return;
   }
 
+  let used = am;
   const stream = useStream.getState();
   stream.set({ chatId, busy: true, text: '', think: '', secs: 0, status: '' });
   controller = new AbortController();
@@ -134,11 +160,15 @@ export async function generateReply(chatId: string): Promise<void> {
 
   const lastUser = [...chat.messages].reverse().find((m) => m.role === 'user');
   let errMsg: string | null = null;
+  let skillsUsed: string[] = [];
   try {
     const imgs = await loadAll(chat.messages.flatMap((m) => m.imgs || []));
     const history = buildHistory(chat.messages, imgs);
     if (!history.length || history[history.length - 1].role !== 'user') throw new Error('لا توجد رسالة لإرسالها.');
-    let system = buildSystem(lastUser?.content || '');
+    const sx = buildSystemEx(lastUser?.content || '', true);
+    let system = sx.system;
+    skillsUsed = sx.skills;
+    useSkillPins.getState().clear();
     const params = resolveParams(chat, am);
     const thinking = useSettings.getState().thinking;
     const S = useSettings.getState();
@@ -172,7 +202,7 @@ export async function generateReply(chatId: string): Promise<void> {
           .then((t) => ({ model: shortModel(S.cmpSel!.model), content: splitThink(t).ans || t, thinking: splitThink(t).think || undefined }))
           .catch((e) => ({ model: shortModel(S.cmpSel!.model), content: e instanceof Error ? e.message : String(e), error: true }));
       }
-      for await (const ch of chatStream({ ep: am.ep, model: am.model, messages: history, system, params, thinking, signal })) {
+      for await (const ch of streamChain(list.length ? list : [am], { messages: history, system, params, thinking, signal }, (m) => { used = m; })) {
         if (ch.kind === 'text') full += ch.text;
         else if (ch.kind === 'think') reason += ch.text;
         else usage = mergeUsage(usage as Usage, ch.usage);
@@ -184,7 +214,7 @@ export async function generateReply(chatId: string): Promise<void> {
         try { res = pc.call ? await runApiCall(pc.call, signal, true) : pc.error || 'خطأ'; } catch (e) { if (signal.aborted) throw e; res = 'خطأ: ' + (e instanceof Error ? e.message : String(e)); }
         steps.push({ id: uid(5), tool: 'api_call', args: (pc.call as any) || {}, status: pc.call ? 'ok' : 'error', result: res.slice(0, 1500), ts: Date.now() });
         useStream.getState().set({ steps: [...steps] });
-        const r2 = await streamTurn(am, [...history, { role: 'assistant', content: splitThink(full).ans }, { role: 'user', content: wrapResult('api_call', !!pc.call, res) }], system, signal);
+        const r2 = await streamTurn(used, [...history, { role: 'assistant', content: splitThink(full).ans }, { role: 'user', content: wrapResult('api_call', !!pc.call, res) }], system, signal);
         full = r2.text; reason = r2.think || reason; usage = mergeUsage(usage as Usage, r2.usage);
       }
     }
@@ -193,7 +223,7 @@ export async function generateReply(chatId: string): Promise<void> {
     if ((e as any)?.name === 'AbortError' || signal.aborted) {
       if (full || reason) toast('تم الإيقاف');
       else toast('تم الإيقاف');
-    } else errMsg = e instanceof Error ? e.message : String(e);
+    } else { errMsg = e instanceof Error ? e.message : String(e); logErr('gen', `${used.ep.label || used.ep.url} · ${used.model} · ${errMsg}`); }
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -203,7 +233,7 @@ export async function generateReply(chatId: string): Promise<void> {
   const v = view();
   const cur = useChats.getState();
   if (errMsg && !v.ans) {
-    cur.addMessage(chatId, { id: uid(), role: 'assistant', content: errMsg, ts: Date.now(), error: true, model: shortModel(am.model) });
+    cur.addMessage(chatId, { id: uid(), role: 'assistant', content: errMsg, ts: Date.now(), error: true, model: shortModel(used.model) });
   } else if (v.ans || v.think) {
     const inEst = estTokens(chat.messages.map((m) => m.content).join(' '));
     const outEst = estTokens(v.ans + v.think);
@@ -213,17 +243,19 @@ export async function generateReply(chatId: string): Promise<void> {
       role: 'assistant',
       content: v.ans || '(انتهى النموذج من التفكير دون إجابة نهائية. جرّب إعادة المحاولة أو زِد Max Tokens.)',
       ts: Date.now(),
-      model: shortModel(am.model),
+      model: shortModel(used.model),
       usage: u,
       ...(v.think ? { thinking: v.think, thinkSecs: v.secs } : {}),
       ...(errMsg ? { error: true } : {}),
       ...(steps.length ? { steps } : {}),
       ...(sources.length ? { sources } : {}),
+      ...(skillsUsed.length ? { skills: skillsUsed } : {}),
       ...(alt ? { alt } : {}),
     };
     cur.addMessage(chatId, m);
+    useModelMeta.getState().bump(used.ep.id + '|' + used.model);
     if (!chat.temp)
-      useUsage.getState().push({ ts: Date.now(), model: am.model, ep: am.ep.id, in: u.in, out: u.out, think: u.think ?? 0, est: !!u.est });
+      useUsage.getState().push({ ts: Date.now(), model: used.model, ep: used.ep.id, in: u.in, out: u.out, think: u.think ?? 0, est: !!u.est });
   }
   useStream.getState().reset();
   controller = null;
@@ -232,7 +264,7 @@ export async function generateReply(chatId: string): Promise<void> {
   const c2 = useChats.getState().chats.find((c) => c.id === chatId);
   if (c2 && !errMsg && useSettings.getState().autoTitle && c2.autoTitle && !c2.temp && c2.messages.filter((m) => m.role === 'assistant').length === 1) {
     // النموذج المحلي بطيء: عنوان من أول كلمات الرسالة بدل توليد ثانٍ
-    if (am.ep.proto === 'llama') useChats.getState().rename(c2.id, cleanTitle((lastUser?.content || '').slice(0, 60)) || 'محادثة جديدة', true);
+    if (used.ep.proto === 'llama') useChats.getState().rename(c2.id, cleanTitle((lastUser?.content || '').slice(0, 60)) || 'محادثة جديدة', true);
     else void makeTitle(c2.id);
   }
 }
@@ -252,9 +284,9 @@ export function cleanTitle(t: string): string {
 }
 
 export async function makeTitle(chatId: string, manual = false): Promise<boolean> {
-  const am = activeModel();
+  const models = utilModels();
   const c = useChats.getState().chats.find((x) => x.id === chatId);
-  if (!am || !c) {
+  if (!models.length || !c) {
     if (manual) toast('أضف نقطة اتصال أولًا');
     return false;
   }
@@ -269,7 +301,7 @@ export async function makeTitle(chatId: string, manual = false): Promise<boolean
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 20000);
   try {
-    const t = cleanTitle(await completeOnce({ ep: am.ep, model: am.model, messages: [{ role: 'user', content: prompt }], system: '', params: { max_tokens: 60 }, signal: ctl.signal }));
+    const t = cleanTitle((await completeChain(models, { messages: [{ role: 'user', content: prompt }], system: '', params: { max_tokens: 60 }, signal: ctl.signal })).text);
     if (!t) {
       if (manual) toast('لم يتمكن النموذج من توليد عنوان');
       return false;
@@ -280,6 +312,7 @@ export async function makeTitle(chatId: string, manual = false): Promise<boolean
     if (manual) toast('تم تحديث عنوان المحادثة');
     return true;
   } catch (e) {
+    logErr('title', e);
     if (manual) toast('تعذّر توليد العنوان: ' + (e instanceof Error ? e.message : String(e)));
     return false;
   } finally {

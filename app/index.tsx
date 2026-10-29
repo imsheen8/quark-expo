@@ -16,7 +16,7 @@ import { Markdown } from '../src/components/chat/Markdown';
 import { ModelPicker } from '../src/components/chat/ModelPicker';
 import { Button, Header, Icon, IconButton, T, haptic } from '../src/components/ui/kit';
 import { useChats, useStream } from '../src/store/chats';
-import { useUi } from '../src/store/data';
+import { toast, useUi } from '../src/store/data';
 import { useSettings } from '../src/store/settings';
 import { useColors } from '../src/theme';
 
@@ -96,10 +96,11 @@ export default function ChatScreen() {
 
   const send = (v: ComposerValue) => {
     bottom.current = true;
-    if (editing && chat) useChats.getState().truncateFrom(chat.id, editing.id);
+    // التعديل: تُحفظ النسخة القديمة بردودها ويمكن العودة إليها من سهم النسخ
+    const branch = editing && chat ? useChats.getState().branchFrom(chat.id, editing.id) ?? undefined : undefined;
     setEditing(null);
     if (useSettings.getState().modes.research && v.text.trim()) { void runResearch(v.text.trim()); router.push('/research'); return; }
-    void sendMessage({ text: v.text, imgs: v.imgs, files: v.files });
+    void sendMessage({ text: v.text, imgs: v.imgs, files: v.files, branch });
   };
 
   const lastId = chat?.messages[chat.messages.length - 1]?.id;
@@ -147,6 +148,8 @@ export default function ChatScreen() {
                   onEdit={item.role === 'user' && !live ? setEditing : undefined}
                   onDelete={!live ? (m) => chat && useChats.getState().deleteMessage(chat.id, m.id) : undefined}
                   onImage={setViewer}
+                  onSwitch={!live ? (m, k) => chat && useChats.getState().switchVer(chat.id, m.id, k) : undefined}
+                  onFork={!live ? (m) => { if (chat && useChats.getState().fork(chat.id, m.id)) toast('تم التفريع إلى محادثة جديدة'); } : undefined}
                 />
               )
             }

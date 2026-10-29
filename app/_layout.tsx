@@ -8,15 +8,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect, useRef, useState } from 'react';
-import { AppState, I18nManager } from 'react-native';
+import { AppState, I18nManager, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GlobalDialogs } from '../src/components/chat/Extras';
-import { ensureManaged } from '../src/api/managed';
 import { runDueTasks, syncTaskNotifications } from '../src/api/engines';
 import { registerBackground } from '../src/api/background';
-import { scheduleSync } from '../src/api/sync';
-import { useChats } from '../src/store/chats';
-import { useTasks } from '../src/store/features';
 import { Intro } from '../src/components/Intro';
 import { LockScreen } from '../src/components/LockScreen';
 import { Sidebar } from '../src/components/Sidebar';
@@ -26,8 +22,20 @@ import { hasPin } from '../src/lib/security';
 import { useUi } from '../src/store/data';
 import { useSettings } from '../src/store/settings';
 import { useColors, useMode } from '../src/theme';
+import { log, logErr } from '../src/store/logs';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// أخطاء JavaScript غير المعالجة تُسجَّل في «سجل الأخطاء» ثم تُمرَّر للمعالج الأصلي
+try {
+  const EU = (globalThis as any).ErrorUtils;
+  const prev = EU?.getGlobalHandler?.();
+  EU?.setGlobalHandler?.((e: any, fatal?: boolean) => {
+    logErr('js', (fatal ? '[fatal] ' : '') + (e?.message || String(e)) + (e?.stack ? '\n' + String(e.stack).split('\n').slice(0, 6).join('\n') : ''));
+    prev?.(e, fatal);
+  });
+} catch {}
+log('app', 'بدء التطبيق · ' + Platform.OS + ' ' + Platform.Version);
 
 // الواجهة عربية بالكامل. الاتجاه يُفرض أيضًا على مستوى النظام (يسري من التشغيل التالي)،
 // وكل شاشة تفرض direction:'rtl' بنفسها فلا تعتمد على إعادة التشغيل.
@@ -48,13 +56,10 @@ function Shell() {
   const away = useRef(0);
 
   useEffect(() => {
-    ensureManaged();
     void runDueTasks().then(() => syncTaskNotifications());
     void registerBackground();
     const sub = AppState.addEventListener('change', (st) => { if (st === 'active') void runDueTasks().then(() => syncTaskNotifications()); });
-    const u1 = useChats.subscribe(scheduleSync);
-    const u2 = useTasks.subscribe(scheduleSync);
-    return () => { sub.remove(); u1(); u2(); };
+    return () => { sub.remove(); };
   }, []);
 
   useEffect(() => {

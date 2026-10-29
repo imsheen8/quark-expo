@@ -13,8 +13,10 @@ import { addSource, buildReportPrompt, EXTRACT_PROMPT, parsePlan, PLAN_PROMPT, r
 import { chatStream, completeOnce } from './stream';
 import { mergeUsage, splitThink } from './parsers';
 import { fetchPage, webSearch } from './web';
+import { researchAM } from './chains';
 import { fetch as xfetch } from 'expo/fetch';
 import type { AgentStep, Endpoint, Usage, WireMsg } from './types';
+import { log, logErr } from '../store/logs';
 
 type AM = { ep: Endpoint; model: string };
 
@@ -189,6 +191,7 @@ export async function agentLoop(o: {
         finish('ok', out);
       } catch (e) {
         if ((e as any)?.name === 'AbortError' || signal.aborted) throw e;
+        log('agent', `${name}: ${e instanceof Error ? e.message : String(e)}`, 'warn');
         finish('error', e instanceof Error ? e.message : String(e));
       }
     }
@@ -202,7 +205,7 @@ const controllers = new Map<string, AbortController>();
 export const stopResearch = (id: string) => controllers.get(id)?.abort();
 
 export async function runResearch(topic: string): Promise<string> {
-  const am = activeModel();
+  const am = researchAM();
   const R = useResearch.getState();
   const r = R.add(topic);
   if (!am) { R.patch(r.id, { status: 'error', error: 'لا يوجد نموذج محدد.' }); return r.id; }
@@ -240,7 +243,7 @@ export async function runResearch(topic: string): Promise<string> {
       fireTaskEvent('research');
     } catch (e) {
       if (signal.aborted) R.patch(r.id, { status: 'stopped', phase: 'أُوقف' });
-      else R.patch(r.id, { status: 'error', error: e instanceof Error ? e.message : String(e) });
+      else { logErr('research', e); R.patch(r.id, { status: 'error', error: e instanceof Error ? e.message : String(e) }); }
     } finally { controllers.delete(r.id); }
   })();
   return r.id;
@@ -274,6 +277,7 @@ export async function runTask(id: string): Promise<void> {
     useChats.getState().setCurrent(null);
     if (t.notify) await notify(t.name, text.slice(0, 140));
   } catch (e) {
+    logErr('task', `${t.name}: ${e instanceof Error ? e.message : String(e)}`);
     useTasks.getState().recordRun(id, { ts, ok: false, text: e instanceof Error ? e.message : String(e) });
   } finally { running.delete(id); }
 }

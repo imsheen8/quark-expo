@@ -28,6 +28,7 @@
       },
       "permissions": [
         "CAMERA",
+        "RECORD_AUDIO",
         "USE_BIOMETRIC",
         "USE_FINGERPRINT"
       ],
@@ -72,7 +73,14 @@
       ],
       "expo-notifications",
       "expo-background-task",
-      "@react-native-google-signin/google-signin"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "يحتاج QUARK AI إلى الميكروفون للإدخال الصوتي."
+        }
+      ],
+      "./plugins/withQuarkNative",
+      "./plugins/withQuarkSigning"
     ],
     "experiments": {
       "typedRoutes": false

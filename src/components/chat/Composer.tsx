@@ -4,10 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import type { FileRef, ImageRef } from '../../api/types';
 import { saveImage, readTextFile } from '../../lib/images';
+import { dictateToggle, micCancel, useMic } from '../../api/voice';
 import { fillTemplate, parseVars } from '../../lib/template';
 import { shortModel } from '../../lib/util';
 import { activeModel, useSettings } from '../../store/settings';
-import { toast, useLibrary, useUi } from '../../store/data';
+import { toast, useLibrary, useSkillPins, useSkills, useUi } from '../../store/data';
 import { useColors, useScale } from '../../theme';
 import { FONT } from '../../theme/themes';
 import { Dialog, Field, Icon, IconButton, Sheet, Switch, T, haptic, Row, Group } from '../ui/kit';
@@ -44,9 +45,41 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
   const [vars, setVars] = useState<{ text: string; list: ReturnType<typeof parseVars>; values: Record<string, string> } | null>(null);
   const draft = useUi((s) => s.draft);
   const setDraft = useUi((s) => s.setDraft);
-  const items = useLibrary((s) => s.items);
+  const lib = useLibrary((s) => s.items);
+  const skills = useSkills((s) => s.items);
+  const pins = useSkillPins((s) => s.ids);
+  const items = useMemo(
+    () => [
+      ...lib.map((i) => ({ id: i.id, kind: i.kind as 'persona' | 'template' | 'skill', name: i.name, text: i.text })),
+      ...skills.filter((k) => k.status === 'published').map((k) => ({ id: k.id, kind: 'skill' as const, name: k.name, text: k.description || k.when || k.body })),
+    ],
+    [lib, skills],
+  );
   const am = activeModel();
   const input = useRef<TextInput>(null);
+  const mic = useMic((st) => st.state);
+  useEffect(() => () => { void micCancel(); }, []);
+  const dictate = () => {
+    haptic();
+    void dictateToggle((t) => {
+      setText((p) => (p && !/\s$/.test(p) ? p + ' ' : p) + t);
+      setTimeout(() => input.current?.focus(), 50);
+    });
+  };
+
+  // إجراء قادم من ودجت/اختصار: يُنفَّذ بعد فتح القفل وجاهزية الشاشة
+  const nativeAct = useUi((st) => st.action);
+  const locked = useUi((st) => st.locked);
+  useEffect(() => {
+    if (!nativeAct || locked) return;
+    useUi.getState().setAction('');
+    setTimeout(() => {
+      if (nativeAct === 'chat') input.current?.focus();
+      else if (nativeAct === 'camera') void pickImages(true);
+      else if (nativeAct === 'photo') void pickImages(false);
+      else if (nativeAct === 'mic') dictate();
+    }, 450);
+  }, [nativeAct, locked]);
 
   useEffect(() => {
     if (initial) {
@@ -84,7 +117,11 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
 
   function chooseItem(it: (typeof items)[number]) {
     haptic();
-    if (it.kind === 'persona') {
+    if (it.kind === 'skill') {
+      useSkillPins.getState().toggle(it.id);
+      setText('');
+      toast('ثُبّتت المهارة للرسالة التالية: ' + it.name);
+    } else if (it.kind === 'persona') {
       useSettings.getState().patch({ activePersonaId: it.id });
       setText('');
       toast('الشخصية المفعّلة: ' + it.name);
@@ -149,16 +186,31 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
     <View style={{ paddingHorizontal: 12, paddingBottom: 8, paddingTop: 6 }}>
       {slashItems.length > 0 ? (
         <View style={{ backgroundColor: c.surface, borderRadius: 14, borderWidth: 1, borderColor: c.border, marginBottom: 8, overflow: 'hidden' }}>
-          <T size={12} color="muted" style={{ padding: 10, paddingBottom: 4 }}>القوالب والشخصيات</T>
+          <T size={12} color="muted" style={{ padding: 10, paddingBottom: 4 }}>القوالب والشخصيات والمهارات</T>
           {slashItems.map((it) => (
             <Pressable key={it.id} onPress={() => chooseItem(it)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, backgroundColor: pressed ? c.surface2 : 'transparent' })}>
-              <Icon name={it.kind === 'persona' ? 'user' : 'file-text'} size={16} color={c.accent} />
+              <Icon name={it.kind === 'persona' ? 'user' : it.kind === 'skill' ? 'zap' : 'file-text'} size={16} color={c.accent} />
               <View style={{ flex: 1 }}>
                 <T size={14} weight="medium">{it.name}</T>
                 <T size={12} color="muted" numberOfLines={1}>{it.text}</T>
               </View>
             </Pressable>
           ))}
+        </View>
+      ) : null}
+
+      {pins.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+          {pins.map((id) => {
+            const k = skills.find((x) => x.id === id);
+            return k ? (
+              <Pressable key={id} onPress={() => useSkillPins.getState().toggle(id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: c.accentSoft, borderRadius: 14, paddingHorizontal: 10, height: 30 }}>
+                <Icon name="zap" size={13} color={c.accent} />
+                <T size={12.5} color="accent">{k.name}</T>
+                <Icon name="x" size={13} color={c.accent} />
+              </Pressable>
+            ) : null;
+          })}
         </View>
       ) : null}
 
@@ -232,6 +284,16 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
             })}
           </View>
           <View style={{ flex: 1 }} />
+          {!busy ? (
+            <Pressable
+              onPress={dictate}
+              disabled={mic === 'busy'}
+              style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: mic === 'rec' ? c.danger : c.surface2 }}
+              accessibilityLabel={mic === 'rec' ? 'إيقاف الإدخال الصوتي' : 'إدخال صوتي'}
+            >
+              <Icon name={mic === 'rec' ? 'square' : mic === 'busy' ? 'loader' : 'mic'} size={mic === 'rec' ? 15 : 19} color={mic === 'rec' ? '#fff' : mic === 'busy' ? c.muted : c.text2} />
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={busy ? onStop : send}
             disabled={!busy && !canSend}
@@ -255,7 +317,6 @@ export function Composer({ busy, onSend, onStop, onPickModel, editing, initial, 
           </View>
           <Group title="الأوضاع">
             <Row icon="globe" title="بحث الويب" sub="يبحث ويضيف مصادر إلى الرد" right={<Switch value={modes.web} onValueChange={(v) => setMode('web', v)} />} />
-            <Row icon="tool" title="وضع الوكيل" sub="أدوات متعددة الخطوات بموافقتك" right={<Switch value={modes.agent} onValueChange={(v) => setMode('agent', v)} />} />
             <Row icon="search" title="بحث عميق" sub="تقرير مفصّل بمصادر (الرسالة التالية تصبح موضوع البحث)" right={<Switch value={modes.research} onValueChange={(v) => setMode('research', v)} />} />
             <Row icon="columns" title="مقارنة نماذج" sub={cmpSel ? 'مع ' + shortModel(cmpSel.model) : 'اختر نموذجًا ثانيًا'} right={<Switch value={modes.compare} onValueChange={(v) => (v && !cmpSel ? (setAttach(false), setTimeout(() => setSecond(true), 250)) : setMode('compare', v))} />} onPress={() => { setAttach(false); setTimeout(() => setSecond(true), 250); }} />
           </Group>

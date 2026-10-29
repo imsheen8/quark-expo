@@ -61,6 +61,12 @@ export interface Msg {
   usage?: Usage;
   /** مصادر الويب المستخدمة في الرد */
   sources?: { n: number; title: string; url: string; host: string }[];
+  /** أسماء المهارات المستخدمة في الرد */
+  skills?: string[];
+  /** نسخ التعديل (على رسائل المستخدم): الذيل من هذه الرسالة لكل نسخة. خانة النسخة الحالية null */
+  vers?: (Msg[] | null)[];
+  /** رقم النسخة الحالية */
+  vi?: number;
   /** خطوات الوكيل */
   steps?: AgentStep[];
   /** رد النموذج الثاني في وضع المقارنة */
@@ -112,6 +118,23 @@ export interface LibItem {
   text: string;
   fav?: boolean;
   ts: number;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  when: string;
+  body: string;
+  tags: string[];
+  category: string;
+  status: 'published' | 'draft' | 'off';
+  source: 'manual' | 'builtin' | 'import' | 'extracted';
+  sourceUrl: string;
+  uses: number;
+  lastUsed: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface MemoryItem {

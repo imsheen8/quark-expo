@@ -231,12 +231,14 @@ export function Sheet({ visible, onClose, title, children, full }: { visible: bo
   const ins = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
-      <RTL>
-        <Pressable style={{ flex: 1, backgroundColor: c.overlay }} onPress={() => { Keyboard.dismiss(); onClose(); }} />
+      <RTL style={{ backgroundColor: c.overlay, justifyContent: 'flex-end' }}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => { Keyboard.dismiss(); onClose(); }} />
         <View
           style={{
-            backgroundColor: c.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: full ? '92%' : '80%',
-            paddingBottom: ins.bottom + 8, borderWidth: 1, borderColor: c.border,
+            // بطاقة عائمة منحنية من كل الجهات بنفس نمط خانة الكتابة (Composer): هامش جانبي وسفلي وحد موحّد
+            backgroundColor: c.bg, borderRadius: 26, borderWidth: 1, borderColor: c.border,
+            marginHorizontal: 12, marginBottom: ins.bottom + 8, maxHeight: full ? '92%' : '80%',
+            paddingBottom: 8, overflow: 'hidden',
           }}
         >
           <View style={{ alignItems: 'center', paddingTop: 8 }}>

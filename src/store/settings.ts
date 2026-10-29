@@ -6,6 +6,8 @@ import { uid } from '../lib/util';
 import { defaultAgent, type AgentConf } from '../api/agentCore';
 import { DEFAULT_SEARCH, type SearchConf } from '../api/web';
 import { persistStorage } from './storage';
+import { defaultSkillsConf, type SkillsConf } from '../api/skillsCore';
+import { defaultDefs, normDefs, type Defs } from '../api/defaultsCore';
 
 export interface Profile {
   name: string;
@@ -25,6 +27,9 @@ export interface SettingsState {
   params: { global: Params; models: Record<string, Params> };
   profile: Profile;
   memory: { enabled: boolean; auto: boolean; max: number };
+  skills: SkillsConf;
+  /** النماذج التلقائية لكل مهمة */
+  defs: Defs;
   activePersonaId: string | null;
   introOn: boolean;
   haptics: boolean;
@@ -38,8 +43,6 @@ export interface SettingsState {
   /** النموذج الثاني للمقارنة */
   cmpSel: { ep: string; model: string } | null;
   /** الحساب المُدار (QUARK) */
-  managed: { token: string; email: string; name: string; plan: string; ep: string };
-  sync: { on: boolean; last: number; auto: boolean };
   /** تصفية قائمة المحادثات: recent|today|week|month|fav|tag:<id> */
   chatFilter: string;
 
@@ -51,6 +54,8 @@ export interface SettingsState {
   toggleModel: (epId: string, modelId: string, on?: boolean) => void;
   addModel: (epId: string, modelId: string) => void;
   select: (epId: string, model: string) => void;
+  /** يحذف نماذج من قوائمها (مفاتيح ep|model) وينظّف الاختيار والمعاملات */
+  removeModels: (keys: string[]) => void;
   setGlobalParams: (p: Params) => void;
   setModelParams: (key: string, p: Params | null) => void;
 }
@@ -71,6 +76,8 @@ export const useSettings = create<SettingsState>()(
       params: { global: {}, models: {} },
       profile: { name: '', nick: '', prefs: '' },
       memory: { enabled: true, auto: true, max: 8 },
+      skills: defaultSkillsConf(),
+      defs: defaultDefs(),
       activePersonaId: null,
       introOn: true,
       haptics: true,
@@ -80,8 +87,6 @@ export const useSettings = create<SettingsState>()(
       gw: { url: '', token: '' },
       modes: { web: false, agent: false, research: false, compare: false },
       cmpSel: null,
-      managed: { token: '', email: '', name: '', plan: 'free', ep: '' },
-      sync: { on: false, last: 0, auto: true },
       chatFilter: 'recent',
 
       patch: (p) => set(p),
@@ -123,6 +128,17 @@ export const useSettings = create<SettingsState>()(
           }),
         })),
       select: (epId, model) => set({ sel: { ep: epId, model } }),
+      removeModels: (keys) =>
+        set((s) => {
+          const kill = new Set(keys);
+          const endpoints = s.endpoints.map((e) => ({ ...e, models: e.models.filter((m) => !kill.has(e.id + '|' + m.id)) }));
+          const models = { ...s.params.models };
+          keys.forEach((k) => delete models[k]);
+          let sel = s.sel && kill.has(s.sel.ep + '|' + s.sel.model) ? null : s.sel;
+          if (!sel) for (const e of endpoints) { const m = e.enabled && e.models.find((x) => x.on); if (m) { sel = { ep: e.id, model: m.id }; break; } }
+          const cmp = s.cmpSel && kill.has(s.cmpSel.ep + '|' + s.cmpSel.model);
+          return { endpoints, sel, params: { ...s.params, models }, ...(cmp ? { cmpSel: null, modes: { ...s.modes, compare: false } } : {}) };
+        }),
       setGlobalParams: (p) => set((s) => ({ params: { ...s.params, global: p } })),
       setModelParams: (key, p) =>
         set((s) => {
@@ -137,16 +153,23 @@ export const useSettings = create<SettingsState>()(
       storage: persistStorage,
       version: 2,
       migrate: (old: any) => ({ ...old }),
-      merge: (saved: any, cur: any) => ({
+      merge: (saved: any, cur: any) => {
+        // نسخ قديمة: حساب QUARK المُدار والمزامنة حُذفا — نُنظّف بقاياهما (التوكن ونقطة «managed»)
+        const { managed: _m, sync: _s, ...rest } = saved || {};
+        const eps = Array.isArray(rest.endpoints) ? rest.endpoints.filter((e: any) => e?.id !== 'managed') : rest.endpoints;
+        const sel = rest.sel?.ep === 'managed' ? null : rest.sel;
+        saved = { ...rest, ...(eps ? { endpoints: eps } : {}), ...(rest.sel !== undefined ? { sel } : {}) };
+        return {
         ...cur,
         ...saved,
         search: { ...cur.search, ...(saved?.search || {}) },
         agent: { ...cur.agent, ...(saved?.agent || {}), tools: { ...cur.agent.tools, ...(saved?.agent?.tools || {}) } },
         gw: { ...cur.gw, ...(saved?.gw || {}) },
         modes: { ...cur.modes, ...(saved?.modes || {}) },
-        managed: { ...cur.managed, ...(saved?.managed || {}) },
-        sync: { ...cur.sync, ...(saved?.sync || {}) },
-      }),
+        skills: { ...cur.skills, ...(saved?.skills || {}) },
+        defs: normDefs(saved?.defs),
+        };
+      },
     },
   ),
 );

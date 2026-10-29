@@ -1,4 +1,5 @@
 import { extractJSON, hostOfUrl, htmlToText, isPrivateUrl, looksBlocked, parseDDG, type SearchResult } from './webParse';
+import { log } from '../store/logs';
 
 export type Engine = 'duckduckgo' | 'searxng' | 'tavily' | 'brave' | 'serper' | 'google_pse';
 
@@ -107,6 +108,7 @@ export async function webSearch(conf: SearchConf, q: string, signal?: AbortSigna
       if (rows.length) return { rows, engine: c.engine };
     } catch (e) {
       if ((e as any)?.name === 'AbortError' || signal?.aborted) throw e;
+      log('web', `${c.engine}: ${e instanceof Error ? e.message : String(e)}`, 'warn');
       lastErr = e;
     }
   }

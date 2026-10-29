@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { LibItem, MemoryItem, UsageRecord } from '../api/types';
+import type { LibItem, MemoryItem, Skill, UsageRecord } from '../api/types';
+import { seedSkills } from '../api/skillsCore';
 import { uid } from '../lib/util';
 import { persistStorage } from './storage';
 
@@ -70,6 +71,45 @@ export const useMemory = create<MemState>()(
   ),
 );
 
+interface SkillState {
+  items: Skill[];
+  add: (s: Skill) => void;
+  addMany: (s: Skill[]) => void;
+  update: (id: string, p: Partial<Skill>) => void;
+  remove: (ids: string[]) => void;
+  markUsed: (ids: string[]) => void;
+  restoreStarters: () => number;
+  replaceAll: (items: Skill[]) => void;
+}
+
+export const useSkills = create<SkillState>()(
+  persist(
+    (set, get) => ({
+      items: seedSkills(),
+      add: (sk) => set((s) => ({ items: [sk, ...s.items] })),
+      addMany: (list) => set((s) => ({ items: [...list, ...s.items] })),
+      update: (id, p) => set((s) => ({ items: s.items.map((x) => (x.id === id ? { ...x, ...p, updatedAt: Date.now() } : x)) })),
+      remove: (ids) => set((s) => ({ items: s.items.filter((x) => !ids.includes(x.id)) })),
+      markUsed: (ids) => set((s) => ({ items: s.items.map((x) => (ids.includes(x.id) ? { ...x, uses: x.uses + 1, lastUsed: Date.now() } : x)) })),
+      restoreStarters: () => {
+        const have = new Set(get().items.map((x) => x.name));
+        const add = seedSkills().filter((x) => !have.has(x.name)).map((x) => ({ ...x, id: uid(8) }));
+        if (add.length) set((s) => ({ items: [...s.items, ...add] }));
+        return add.length;
+      },
+      replaceAll: (items) => set({ items }),
+    }),
+    { name: 'ai_skills_v1', storage: persistStorage, version: 1 },
+  ),
+);
+
+/** مهارات مثبّتة يدويًا للرسالة التالية (لا تُحفظ) */
+export const useSkillPins = create<{ ids: string[]; toggle: (id: string) => void; clear: () => void }>()((set) => ({
+  ids: [],
+  toggle: (id) => set((s) => ({ ids: s.ids.includes(id) ? s.ids.filter((x) => x !== id) : [...s.ids, id] })),
+  clear: () => set({ ids: [] }),
+}));
+
 interface UsageState {
   log: UsageRecord[];
   push: (r: UsageRecord) => void;
@@ -96,6 +136,9 @@ interface UiState {
   locked: boolean;
   /** نص يُدرج في المربع عند فتح المحادثة (من المكتبة مثلًا) */
   draft: string;
+  /** إجراء من ودجت/اختصار ينتظر مربع الكتابة (chat/camera/photo/mic) */
+  action: string;
+  setAction: (a: string) => void;
   setSidebar: (v: boolean) => void;
   toast: (m: string) => void;
   setLocked: (v: boolean) => void;
@@ -107,6 +150,8 @@ export const useUi = create<UiState>((set) => ({
   toastId: 0,
   locked: false,
   draft: '',
+  action: '',
+  setAction: (a) => set({ action: a }),
   setSidebar: (v) => set({ sidebarOpen: v }),
   toast: (m) => set((s) => ({ toastMsg: m, toastId: s.toastId + 1 })),
   setLocked: (v) => set({ locked: v }),
