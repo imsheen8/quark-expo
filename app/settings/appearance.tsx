@@ -1,37 +1,9 @@
 import { Pressable, View } from 'react-native';
-import { haptic, Icon, Screen, T, type IconName } from '../../src/components/ui/kit';
+import { Segmented } from '../../src/components/ui/panels';
+import { haptic, Icon, Screen, T } from '../../src/components/ui/kit';
 import { useSettings } from '../../src/store/settings';
 import { useColors, useMode } from '../../src/theme';
 import { buildColors, THEMES, validThemeId, type Mode } from '../../src/theme/themes';
-
-/** شريط اختيار مقسّم (وضع الألوان / حجم الخط) */
-function Segmented<K extends string>({ items, value, onChange }: {
-  items: { key: K; label: string; icon?: IconName }[]; value: K; onChange: (k: K) => void;
-}) {
-  const c = useColors();
-  return (
-    <View style={{ flexDirection: 'row', gap: 4, backgroundColor: c.surface2, borderRadius: 14, padding: 4 }}>
-      {items.map((it) => {
-        const on = it.key === value;
-        return (
-          <Pressable
-            key={it.key}
-            onPress={() => { haptic(); onChange(it.key); }}
-            accessibilityRole="button"
-            accessibilityState={{ selected: on }}
-            style={{
-              flex: 1, height: 40, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-              backgroundColor: on ? c.surface : 'transparent', borderWidth: 1, borderColor: on ? c.border : 'transparent',
-            }}
-          >
-            {it.icon ? <Icon name={it.icon} size={16} color={on ? c.text : c.muted} /> : null}
-            <T size={14} weight={on ? 'semibold' : 'regular'} color={on ? 'text' : 'text2'}>{it.label}</T>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
 
 /** بطاقة ثيم: شاشة مصغّرة بألوانه الحقيقية */
 function ThemeCard({ mode, id, name, selected, onPress }: { mode: Mode; id: string; name: string; selected: boolean; onPress: () => void }) {
