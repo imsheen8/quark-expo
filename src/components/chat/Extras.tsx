@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { AG_TOOLS } from '../../api/agentCore';
 import { cancelStep } from '../../api/stepCancel';
 import type { AgentStep, Msg } from '../../api/types';
 import { shortModel } from '../../lib/util';
 import { useDialogs } from '../../store/features';
+import { useChats } from '../../store/chats';
+import { useWorkspace } from '../../store/workspace';
+import { wsStats } from '../../api/workspaceCore';
 import { useSettings } from '../../store/settings';
 import { useColors } from '../../theme';
 import { FONT } from '../../theme/themes';
@@ -31,8 +35,14 @@ export function SourceChips({ sources }: { sources: NonNullable<Msg['sources']> 
 const TOOL_ICON: Record<string, IconName> = {
   web_search: 'search', read_url: 'globe', calculator: 'hash', now: 'clock', memory_search: 'database', memory_save: 'save',
   search_chats: 'message-circle', read_chat: 'message-square', ask_user: 'help-circle', manage_tasks: 'check-square', create_file: 'file-plus', run_js: 'terminal', delegate: 'users',
+  fs_write: 'file-plus', fs_edit: 'edit-3', fs_read: 'file-text', fs_list: 'folder', fs_search: 'search', fs_delete: 'trash-2', fs_move: 'move',
+  scaffold_project: 'layers', check_project: 'check-circle', run_project: 'play', preview_project: 'eye', export_project: 'package',
 };
 const summ = (s: AgentStep) => {
+  if (s.tool === 'fs_write' && Array.isArray(s.args.files)) return s.args.files.map((f: any) => f?.path).filter(Boolean).join('، ').slice(0, 160);
+  if (s.tool === 'scaffold_project') return [s.args.template, s.args.name].filter(Boolean).join(' · ');
+  if (s.tool === 'fs_move') return `${s.args.from ?? ''} ← ${s.args.to ?? ''}`;
+  if (s.tool === 'fs_list') return String(s.args.dir ?? '');
   const v = s.args.query ?? s.args.url ?? s.args.expression ?? s.args.code ?? s.args.path ?? s.args.action ?? s.args.filename ?? s.args.question ?? s.args.text ?? s.args.content;
   if (v != null && typeof v !== 'object') return String(v).replace(/\s+/g, ' ').slice(0, 160);
   const j = JSON.stringify(s.args ?? {});
@@ -119,6 +129,27 @@ export function AgentFlow({ text, steps }: { text: string; steps: AgentStep[] })
     <View style={{ gap: 10 }}>
       {parts.map((p, i) => (p.k === 't' ? <Markdown key={i} text={p.v} /> : <AgentSteps key={i} steps={p.v} />))}
     </View>
+  );
+}
+
+/** بطاقة مشروع الوكيل تحت ردّه: تفتح شاشة الملفات للتصدير والمعاينة */
+const WS_BUILD = ['fs_write', 'fs_edit', 'scaffold_project'];
+export function WorkspaceChip({ steps }: { steps: AgentStep[] }) {
+  const c = useColors();
+  const router = useRouter();
+  const cid = useChats((s) => s.currentId);
+  const p = useWorkspace((s) => (cid ? s.projects[cid] : undefined));
+  if (!p || !steps.some((s) => WS_BUILD.includes(s.tool))) return null;
+  const st = wsStats(p.files);
+  return (
+    <Pressable onPress={() => { haptic(); router.push(('/workspace?id=' + encodeURIComponent(p.id)) as any); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.accentSoft, borderRadius: 14, padding: 12 }}>
+      <Icon name="folder" size={20} color={c.accent} />
+      <View style={{ flex: 1 }}>
+        <T size={14} weight="semibold" numberOfLines={1}>{p.name}</T>
+        <T size={12} color="text2">{st.count} ملف · {Math.max(1, Math.round(st.bytes / 1024))} KB — عرض وتصدير</T>
+      </View>
+      <Icon name="chevron-left" size={18} color={c.accent} />
+    </Pressable>
   );
 }
 

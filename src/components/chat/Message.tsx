@@ -8,7 +8,7 @@ import { toast } from '../../store/data';
 import { useColors } from '../../theme';
 import { Icon, IconButton, T, haptic } from '../ui/kit';
 import { Markdown } from './Markdown';
-import { AgentFlow, CompareView, SourceChips } from './Extras';
+import { AgentFlow, CompareView, SourceChips, WorkspaceChip } from './Extras';
 import { ResearchCard } from './ResearchCard';
 
 export function Thinking({ text, secs, live }: { text: string; secs: number; live?: boolean }) {
@@ -127,6 +127,7 @@ export function MessageView({ msg, isLast, onRegenerate, onEdit, onDelete, onIma
       ) : (
         <Markdown text={msg.content} />
       )}
+      {msg.steps?.length ? <WorkspaceChip steps={msg.steps} /> : null}
       {msg.sources?.length ? <SourceChips sources={msg.sources} /> : null}
       {msg.skills?.length ? <T size={12} color="muted">✦ مهارات: {msg.skills.join('، ')}</T> : null}
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>

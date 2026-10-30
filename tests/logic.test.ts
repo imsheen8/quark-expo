@@ -13,6 +13,7 @@ import { fillTemplate, parseVars } from '../src/lib/template';
 import { mixHex, relTime } from '../src/lib/util';
 import { decodeEntities, htmlToText, isPrivateUrl, parseDDG, extractJSON } from '../src/api/webParse';
 import { nextRun, parseCron, validateSchedule } from '../src/lib/schedule';
+import { REPEATABLE, WS_TOOLS, normalizeArgs, buildPrompt, nativePrompt } from '../src/api/agentCore';
 import { AG_TOOLS, parseAsk, formatAsk, MAX_SUB_TASKS, PARALLEL_SAFE, SUB_TOOLS, calc, compact, needsApproval, parseCalls, subConf, toolSpecs, validate, wrapResult, defaultAgent, availableTools } from '../src/api/agentCore';
 import { cancelStep, registerStep, unregisterStep } from '../src/api/stepCancel';
 import { parsePlan } from '../src/api/researchCore';
@@ -28,6 +29,7 @@ import {
 } from '../src/api/voiceCore';
 import { forkUpTo, startBranch, switchVersion, versionCount, versionIndex } from '../src/lib/branches';
 import { cleanRepo, fit, hfFileUrl, pickVariant, quantOf, variantsFromFiles } from '../src/api/localCore';
+import { buildWebPreview, condenseHistory, crc32, detectKind, formatIssues, formatRun, importsOf, instrumentHtml, lintProject, makeZip, normPath, scaffold, scanBrackets, utf8, wsContext, wsDelete, wsEdit, wsList, wsMove, wsRead, wsSearch, wsWrite, type Files } from '../src/api/workspaceCore';
 
 let n = 0;
 const t = (name: string, fn: () => void) => {
@@ -739,6 +741,214 @@ t('ask_user: أسئلة متعددة الخيارات', () => {
   assert.equal(formatAsk(qs, [['أ', 'ب'], ['x']]).split('\n')[0], 'أي لغة؟ ← أ، ب');
   assert.equal(formatAsk(qs, null), 'تخطّى المستخدم الأسئلة.');
   assert.equal(validate('ask_user', { question: 'x' }), '');
+});
+
+console.log('workspace (وكيل حقيقي)');
+t('مساحة العمل: تعقيم المسارات', () => {
+  assert.equal(normPath('./src//App.js'), 'src/App.js');
+  assert.equal(normPath('/App.js'), 'App.js');
+  assert.equal(normPath('a\\b.js'), 'a/b.js');
+  for (const bad of ['../x', 'a/../../b', '', '   ', 'a/./b', 'a/b?.js', 'x\u0000y', 'a'.repeat(300)]) assert.throws(() => normPath(bad), bad.slice(0, 10));
+  assert.throws(() => normPath(5 as any));
+});
+t('مساحة العمل: كتابة وتعديل وحذف ونقل', () => {
+  let f: Files = {};
+  const w = wsWrite(f, [{ path: 'src/a.js', content: 'const a = 1;\nconst b = 2;\n' }, { path: 'README.md', content: '# x' }]);
+  f = w.files;
+  assert.ok(w.msg.includes('+ src/a.js'));
+  assert.equal(wsWrite(f, [{ path: 'README.md', content: '# y' }]).msg.includes('~ README.md'), true);
+  assert.throws(() => wsWrite(f, [{ path: 'x', content: 5 as any }]));
+  assert.throws(() => wsWrite(f, [{ path: 'big', content: 'x'.repeat(200_001) }]));
+  assert.throws(() => wsWrite(f, []));
+  // لا يغيّر الأصل (لا آثار جانبية عند الفشل)
+  assert.equal(f['README.md'], '# x');
+  const e = wsEdit(f, 'src/a.js', [{ old: 'a = 1', new: 'a = 10' }, { old: 'b = 2', new: 'b = 20' }]);
+  assert.equal(e.files['src/a.js'], 'const a = 10;\nconst b = 20;\n');
+  assert.throws(() => wsEdit(f, 'src/a.js', [{ old: 'a = 1', new: 'zz' }, { old: 'غير موجود', new: 'q' }]), /غير موجود/);
+  assert.equal(f['src/a.js'].includes('a = 1'), true);
+  assert.throws(() => wsEdit({ 'x.js': 'aa aa' }, 'x.js', [{ old: 'aa', new: 'b' }]), /مرات/);
+  assert.equal(wsEdit({ 'x.js': 'aa aa' }, 'x.js', [{ old: 'aa', new: 'b', all: true }]).files['x.js'], 'b b');
+  assert.equal(wsEdit({ 'x.js': 'p$&q' }, 'x.js', [{ old: 'p', new: '$&$&' }]).files['x.js'], '$&$&$&q');
+  assert.throws(() => wsEdit(f, 'nope.js', [{ old: 'a', new: 'b' }]), /غير موجود/);
+  const m = wsMove(f, 'src', 'lib');
+  assert.deepEqual(Object.keys(m.files).sort(), ['README.md', 'lib/a.js']);
+  assert.throws(() => wsMove(f, 'src/a.js', 'README.md'), /موجودة/);
+  const d = wsDelete(f, 'src');
+  assert.deepEqual(Object.keys(d.files), ['README.md']);
+  assert.throws(() => wsDelete(f, 'zzz'));
+});
+t('مساحة العمل: قراءة وبحث وقائمة وسياق', () => {
+  const f: Files = { 'a.js': Array.from({ length: 900 }, (_, i) => 'line' + (i + 1)).join('\n'), 'b/c.js': 'Hello World' };
+  const r = wsRead(f, 'a.js', 10, 12);
+  assert.ok(r.includes('10│ line10') && r.includes('12│ line12') && !r.includes('line13'));
+  assert.ok(wsRead(f, 'a.js').includes('استكمل بـ from:'));
+  assert.ok(wsRead(f, 'b').includes('b/c.js'));
+  assert.throws(() => wsRead(f, 'c.js'), /ربما تقصد: b\/c\.js/);
+  assert.equal(wsSearch(f, 'hello'), 'b/c.js:1: Hello World');
+  assert.equal(wsSearch(f, 'H.llo', { regex: true }), 'b/c.js:1: Hello World');
+  assert.throws(() => wsSearch(f, '(', { regex: true }));
+  assert.equal(wsSearch(f, 'zzz'), 'لا تطابقات.');
+  assert.ok(wsList(f).startsWith('2 ملف'));
+  assert.equal(wsList({}), 'مساحة العمل فارغة.');
+  const c = wsContext(f, [{ t: 'الأولى', done: true }, { t: 'الثانية' }], 'تطبيقي');
+  assert.ok(c.includes('«تطبيقي»') && c.includes('- a.js (900)') && c.includes('✓ الأولى') && c.includes('○ الثانية'));
+  assert.ok(wsContext({}, [], undefined).includes('فارغة'));
+});
+t('فحص المشروع: أقواس وقوالب وتعابير نمطية بلا إنذارات كاذبة', () => {
+  assert.equal(scanBrackets("const a = { b: [1, (2)] };\nfunction f() { return `x ${a.b[0]} y ${ {k: 1}.k }`; }\n"), null);
+  assert.equal(scanBrackets("const r = /[(]+\\//g.test(s); const q = a / b; if (x) { y(); }\n"), null);
+  assert.equal(scanBrackets("// ( فقط تعليق\n/* { */ const s = '(' + \"{\" ;\n"), null);
+  // نص JSX فيه فاصلة عليا + قوس بعدها لا يُفسد التوازن
+  assert.equal(scanBrackets("const A = () => (<View>{ok ? (<B/>) : null}<Text>Don't {a}</Text>{items.map((i) => <Text key={i}>{i}'s</Text>)}</View>);\n"), null);
+  assert.equal(scanBrackets('const x = <A />;\nconst y = <B a={1} />;\n'), null);
+  // ملف مبتور
+  const cut = scanBrackets("export default function App() {\n  return (\n    <View>\n");
+  assert.ok(cut && /لم يُغلق/.test(cut.msg) && cut.line === 2);
+  assert.ok(scanBrackets('foo(1, 2]\n')!.msg.includes('لا يطابق'));
+  assert.ok(scanBrackets('const t = `abc ${x\n')!.msg.length > 0);
+  assert.ok(scanBrackets('/* لم يُغلق')!.msg.includes('تعليق'));
+  assert.equal(scanBrackets('a { color: red; } /* c */ b { }', true), null);
+  assert.ok(scanBrackets('a { color: red;', true));
+});
+t('فحص المشروع: استيرادات وحزم وبنية', () => {
+  assert.deepEqual(importsOf("import A from './a';\nimport { b } from \"../b\"\nexport * from './c';\nconst d = require('d');\nawait import('e');\n// import z from 'zz'\nimport './side';").sort(), ['../b', './a', './c', './side', 'd', 'e']);
+  const f = wsWrite(scaffold('expo', 'Tasks'), [
+    { path: 'src/store.js', content: "export const x = 1;\n" },
+    { path: 'App.js', content: "import { x } from './src/store';\nimport y from './src/missing';\nimport z from 'unlisted-pkg';\nimport { Ionicons } from '@expo/vector-icons';\nexport default function App() { return null; }\n" },
+  ]).files;
+  const iss = lintProject(f);
+  assert.ok(iss.some((i) => i.level === 'error' && i.path === 'App.js' && i.msg.includes('./src/missing')));
+  assert.ok(iss.some((i) => i.level === 'warn' && i.msg.includes('unlisted-pkg')));
+  assert.ok(!iss.some((i) => i.msg.includes('./src/store')));
+  assert.ok(iss[0].level === 'error'); // الأخطاء أولًا
+  assert.ok(formatIssues(iss, f).includes('✗ App.js'));
+  // JSON تالف وتحذير ملف مبتور واختصارات الكود
+  const bad = lintProject({ 'package.json': '{ "name": ', 'a.js': 'function f() {', 'b.js': '// ... rest of the code\nexport const q = 1;', 'c.json': '{"a":1,}', 'tsconfig.json': '{ // تعليق مسموح\n}' });
+  assert.ok(bad.some((i) => i.path === 'package.json' && i.level === 'error'));
+  assert.ok(bad.some((i) => i.path === 'a.js' && /لم يُغلق/.test(i.msg)));
+  assert.ok(bad.some((i) => i.path === 'b.js' && /اختصار/.test(i.msg)));
+  assert.ok(bad.some((i) => i.path === 'c.json'));
+  assert.ok(!bad.some((i) => i.path === 'tsconfig.json'));
+  // نص عادي يحوي «code here» خارج التعليقات لا يُعدّ اختصارًا
+  assert.ok(!lintProject({ 'x.js': "const p = 'Enter code here';\nexport default p;\n" }).some((i) => /اختصار/.test(i.msg)));
+  // expo: نقطة دخول وslug
+  const noEntry = lintProject({ 'package.json': JSON.stringify({ name: 'x', dependencies: { expo: '~54.0.0', react: '19.1.0', 'react-native': '0.81.5' } }), 'app.json': JSON.stringify({ expo: { name: 'x' } }) });
+  assert.ok(noEntry.some((i) => /نقطة دخول/.test(i.msg)) && noEntry.some((i) => /slug/.test(i.msg)));
+  const miss = lintProject({ 'package.json': JSON.stringify({ name: 'x', main: 'index.js', dependencies: { expo: '~54.0.0' } }), 'app.json': '{}' });
+  assert.ok(miss.some((i) => /react-native/.test(i.msg)) && miss.some((i) => /main يشير/.test(i.msg)));
+  // expo-router: مسار بلا export default
+  const rt = lintProject({ 'package.json': JSON.stringify({ name: 'x', main: 'expo-router/entry', dependencies: { expo: '~54.0.0', react: '1', 'react-native': '1', 'expo-router': '~6.0.0' } }), 'app.json': JSON.stringify({ expo: { name: 'x', slug: 'x', android: { package: 'a.b' } } }), 'app/index.js': 'export const a = 1;\n' });
+  assert.ok(rt.some((i) => i.path === 'app/index.js' && /export default/.test(i.msg)));
+  assert.equal(detectKind({}), 'empty');
+  assert.equal(detectKind({ 'index.html': '<html>' }), 'web');
+});
+t('القوالب: كلها تجتاز الفحص وتُشغَّل معاينتها', () => {
+  for (const k of ['expo', 'web', 'node'] as const) {
+    const f = scaffold(k, 'تطبيق المهام! <x>', { ci: true });
+    assert.deepEqual(lintProject(f).filter((i) => i.level === 'error'), [], k);
+    assert.ok(Object.keys(f).length >= 3);
+  }
+  const ex = scaffold('expo', 'My Tasks');
+  const pkg = JSON.parse(ex['package.json']);
+  assert.equal(pkg.name, 'my-tasks');
+  assert.equal(pkg.dependencies.expo, '~54.0.0');
+  assert.equal(JSON.parse(ex['app.json']).expo.android.package, 'com.krazos.my-tasks'.replace('-', ''));
+  assert.ok(!('.github/workflows/build-apk.yml' in ex) && '.github/workflows/build-apk.yml' in scaffold('expo', 'x', { ci: true }));
+  assert.throws(() => scaffold('django'), /قالب غير معروف/);
+  // معاينة الويب: يدمج CSS وJS المحليين
+  const web = scaffold('web', 'W');
+  const html = buildWebPreview(web);
+  assert.ok(html.includes('<style>') && html.includes('getElementById') && !html.includes('href="style.css"') && !html.includes('src="app.js"'));
+  assert.throws(() => buildWebPreview({ 'a.js': '' }), /لا يوجد ملف HTML/);
+  const inst = instrumentHtml(html);
+  assert.ok(inst.includes('ReactNativeWebView') && inst.indexOf('ReactNativeWebView') < inst.indexOf('<style>'));
+  assert.ok(formatRun([{ t: 'error', m: 'ReferenceError: x' }, { t: 'log', m: 'hi' }], true).includes('✗ 1 خطأ'));
+  assert.ok(formatRun([], true).includes('✓ لا أخطاء'));
+  assert.ok(formatRun([], false).includes('لم يكتمل'));
+});
+t('ZIP: بنية صحيحة وCRC وأسماء عربية', () => {
+  const files: Files = { 'ملف عربي.txt': 'مرحبا 😀', 'src/a.js': 'x'.repeat(5000), 'empty.txt': '' };
+  const z = makeZip(files, 'proj', new Date(2026, 9, 30, 12, 0, 0));
+  const dv = new DataView(z.buffer, z.byteOffset, z.byteLength);
+  assert.equal(dv.getUint32(z.length - 22, true), 0x06054b50);
+  const cnt = dv.getUint16(z.length - 22 + 10, true);
+  assert.equal(cnt, 3);
+  let p = dv.getUint32(z.length - 22 + 16, true);
+  const seen: string[] = [];
+  for (let i = 0; i < cnt; i++) {
+    assert.equal(dv.getUint32(p, true), 0x02014b50);
+    const crc = dv.getUint32(p + 16, true), size = dv.getUint32(p + 24, true), nl = dv.getUint16(p + 28, true), off = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(z.subarray(p + 46, p + 46 + nl));
+    assert.equal(dv.getUint32(off, true), 0x04034b50);
+    const lnl = dv.getUint16(off + 26, true);
+    const data = z.subarray(off + 30 + lnl, off + 30 + lnl + size);
+    assert.equal(crc32(data), crc, name);
+    assert.equal(new TextDecoder().decode(data), files[name.slice('proj/'.length)]);
+    assert.ok(dv.getUint16(off + 6, true) & 0x0800);
+    seen.push(name);
+    p += 46 + nl;
+  }
+  assert.deepEqual(seen.sort(), ['proj/empty.txt', 'proj/src/a.js', 'proj/ملف عربي.txt']);
+  assert.equal(crc32(utf8('123456789')), 0xcbf43926);
+  assert.deepEqual([...utf8('أ😀')], [...new TextEncoder().encode('أ😀')]);
+});
+t('وكيل المشاريع: أدوات ومطالبات وموافقات وتكرار', () => {
+  assert.equal(WS_TOOLS.length, 12);
+  assert.ok(WS_TOOLS.every((k) => AG_TOOLS[k].risk === 'ws' && AG_TOOLS[k].def));
+  const cfg = defaultAgent();
+  for (const k of WS_TOOLS) {
+    assert.equal(needsApproval(k, {}, cfg, true), false, k);
+    assert.equal(needsApproval(k, {}, { ...cfg, approval: 'strict' }, true), false, k);
+  }
+  assert.equal(needsApproval('create_file', {}, cfg, false), true);
+  assert.ok(cfg.maxSteps >= 25);
+  // لا يُعدّ استدعاءً مكررًا ما تتغير نتيجته بتغيّر المشروع
+  for (const k of ['fs_read', 'fs_list', 'check_project', 'run_project', 'plan']) assert.ok(REPEATABLE.includes(k));
+  assert.ok(!REPEATABLE.includes('web_search') && !REPEATABLE.includes('fs_write'));
+  // قراءات المشروع متوازية؛ الكتابات متسلسلة
+  assert.ok(PARALLEL_SAFE.includes('fs_read') && PARALLEL_SAFE.includes('check_project') && !PARALLEL_SAFE.includes('fs_write') && !PARALLEL_SAFE.includes('run_project'));
+  // التحقق من الوسائط وتبسيط الصيغ الشائعة
+  assert.ok(validate('fs_write', {}).includes('files'));
+  assert.equal(validate('fs_write', normalizeArgs('fs_write', { path: 'a.js', content: 'x' })), '');
+  assert.deepEqual(normalizeArgs('fs_write', { files: { 'a.js': 'x' } }), { files: [{ path: 'a.js', content: 'x' }] });
+  assert.deepEqual(normalizeArgs('fs_edit', { path: 'a', old_str: 'x', new_str: 'y' }), { path: 'a', edits: [{ old: 'x', new: 'y' }] });
+  assert.equal(validate('fs_edit', { path: 'a' }) !== '', true);
+  assert.equal(validate('scaffold_project', { template: 'expo' }), '');
+  assert.equal(validate('check_project', {}), '');
+  // المطالبة تحوي قواعد البناء حين تتوفر الأدوات وتغيب حين تُعطَّل
+  const names = availableTools(cfg, { mem: true });
+  for (const pr of [buildPrompt(names, cfg), nativePrompt(names, cfg)]) assert.ok(pr.includes('قواعد العمل على المشاريع') && pr.includes('check_project') && pr.includes('export_project'));
+  const off = { ...cfg, tools: Object.fromEntries(Object.keys(AG_TOOLS).map((k) => [k, !WS_TOOLS.includes(k)])) };
+  assert.ok(!buildPrompt(availableTools(off, { mem: true }), off).includes('قواعد العمل على المشاريع'));
+  // مواصفات الأدوات الأصلية
+  const sp = toolSpecs(WS_TOOLS);
+  assert.equal(sp.find((x) => x.name === 'fs_write')!.parameters.properties.files.type, 'array');
+  assert.equal(sp.find((x) => x.name === 'fs_read')!.parameters.properties.from.type, 'number');
+});
+t('اختصار السياق: محتوى الملفات القديمة لا يتضخم', () => {
+  const big = 'x\n'.repeat(3000);
+  const mk = (i: number) => [
+    { role: 'assistant', content: 'سأكتب', toolCalls: [{ id: 'c' + i, name: 'fs_write', args: { files: [{ path: `f${i}.js`, content: big }] } }, { id: 'e' + i, name: 'fs_edit', args: { path: 'a', edits: [{ old: big, new: big + 'y' }] } }, { id: 'r' + i, name: 'fs_read', args: { path: 'a' } }] },
+    { role: 'user', content: '', toolResults: [{ id: 'c' + i, name: 'fs_write', ok: true, content: 'ok' }] },
+  ];
+  const hist: any[] = [{ role: 'user', content: 'ابنِ' }, ...mk(1), ...mk(2), ...mk(3)];
+  const out = condenseHistory(hist, 2);
+  const a1 = out[1].toolCalls!;
+  assert.equal(JSON.stringify(a1[0].args).includes('محفوظ: 3001 سطر'), true);
+  assert.equal(a1[0].args.files[0].path, 'f1.js');
+  assert.ok(JSON.stringify(a1[1].args).length < 600);
+  assert.deepEqual(a1[2].args, { path: 'a' });
+  // آخر دورين كاملان
+  assert.equal(JSON.stringify(out[3].toolCalls![0].args).length > 5000, true);
+  assert.equal(JSON.stringify(out[5].toolCalls![0].args).length > 5000, true);
+  // الأصل لا يتغير
+  assert.equal(hist[1].toolCalls[0].args.files[0].content, big);
+  // وضع الكتل النصية: تبقى كتلة tool صالحة JSON
+  const txt: any[] = [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'قبل\n```tool\n' + JSON.stringify({ name: 'fs_write', args: { files: [{ path: 'a.js', content: big }] } }) + '\n```' }, { role: 'user', content: 'r' }, { role: 'assistant', content: 'a' }, { role: 'user', content: 'r' }, { role: 'assistant', content: 'b' }];
+  const o2 = condenseHistory(txt, 2);
+  const m = /```tool\n([\s\S]*?)\n```/.exec(o2[1].content)!;
+  assert.equal(JSON.parse(m[1]).args.files[0].content, '[محفوظ: 3001 سطر]');
+  assert.ok(o2[1].content.startsWith('قبل'));
 });
 
 console.log(`\n${n} اختبارًا نجح`);

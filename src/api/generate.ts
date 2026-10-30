@@ -13,6 +13,7 @@ import { applyDefaultChatModel, chatModels, completeChain, streamChain, utilMode
 import { agentLoop, fireTaskEvent, needsResearch, searchForChat, startChatResearch } from './engines';
 import type { AgentStep, Chat, FileRef, ImageRef, Msg, Params, Usage } from './types';
 import { logErr } from '../store/logs';
+import { flushWorkspaces } from '../store/workspace';
 
 let controller: AbortController | null = null;
 
@@ -180,7 +181,7 @@ export async function generateReply(chatId: string): Promise<void> {
     if (S.modes.agent) {
       useStream.getState().set({ status: 'وضع الوكيل' });
       const r = await agentLoop({
-        am, history, system, signal, conf: S.agent,
+        am, history, system, signal, conf: S.agent, chatId, params: { ...params, max_tokens: params.max_tokens ?? 8192 },
         onStep: (st) => { steps = st; useStream.getState().set({ steps: st }); },
         onDelta: (a, t) => { full = a; reason = t; if (!timer) timer = setTimeout(paint, 60); },
       });
@@ -207,7 +208,7 @@ export async function generateReply(chatId: string): Promise<void> {
       for await (const ch of streamChain(list.length ? list : [am], { messages: history, system, params, thinking, signal }, (m) => { used = m; })) {
         if (ch.kind === 'text') full += ch.text;
         else if (ch.kind === 'think') reason += ch.text;
-        else usage = mergeUsage(usage as Usage, ch.usage);
+        else if (ch.kind === 'usage') usage = mergeUsage(usage as Usage, ch.usage);
         if (!timer) timer = setTimeout(paint, 60);
       }
     }
@@ -219,6 +220,7 @@ export async function generateReply(chatId: string): Promise<void> {
     } else { errMsg = e instanceof Error ? e.message : String(e); logErr('gen', `${used.ep.label || used.ep.url} · ${used.model} · ${errMsg}`); }
   } finally {
     if (timer) clearTimeout(timer);
+    void flushWorkspaces();
   }
 
   let alt: Msg['alt'] | undefined;

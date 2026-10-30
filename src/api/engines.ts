@@ -6,13 +6,17 @@ import { activeModel, useSettings } from '../store/settings';
 import { estTokens, shortModel, uid } from '../lib/util';
 import { pickMemories } from '../lib/memoryRank';
 import { nextRun, validateSchedule, type Schedule } from '../lib/schedule';
-import { AG_TOOLS, MAX_SUB_TASKS, PARALLEL_SAFE, SUB_SYSTEM, availableTools, buildPrompt, calc, compact, formatAsk, nativePrompt, needsApproval, parseAsk, parseCalls, stripToolBlocks, subConf, toolSpecs, validate, wrapResult, type AgentConf } from './agentCore';
+import { AG_TOOLS, MAX_SUB_TASKS, PARALLEL_SAFE, REPEATABLE, SUB_SYSTEM, WS_TOOLS, availableTools, buildPrompt, calc, compact, formatAsk, nativePrompt, needsApproval, normalizeArgs, parseAsk, parseCalls, stripToolBlocks, subConf, toolSpecs, validate, wrapResult, type AgentConf } from './agentCore';
+import { buildWebPreview, condenseHistory, formatIssues, formatRun, lintProject, scaffold, wsContext, wsDelete, wsEdit, wsList, wsMove, wsRead, wsSearch, wsWrite, type Files, type PlanItem } from './workspaceCore';
+import { getProject, loadWorkspaces, updateProject, usePreviewHost } from '../store/workspace';
+import { runWebPage } from '../lib/webRunner';
+import { exportZip } from '../lib/wsExport';
 import { addSource, buildReportPrompt, EXTRACT_PROMPT, parsePlan, PLAN_PROMPT, referencesMd, type Source } from './researchCore';
 import { chatStream, completeOnce } from './stream';
 import { mergeUsage, splitThink } from './parsers';
 import { fetchPage, webSearch } from './web';
 import { researchAM } from './chains';
-import type { AgentStep, Endpoint, ToolCall, ToolResult, ToolSpec, Usage, WireMsg } from './types';
+import type { AgentStep, Endpoint, Params, ToolCall, ToolResult, ToolSpec, Usage, WireMsg } from './types';
 import { runJs } from '../lib/jsSandbox';
 import { registerStep, unregisterStep } from './stepCancel';
 import { log, logErr } from '../store/logs';
@@ -27,10 +31,10 @@ export async function ask(prompt: string, system = '', signal?: AbortSignal, am:
 }
 
 /** بث دور واحد وجمع النص (+ استدعاءات الأدوات الأصلية إن مُرِّرت tools) */
-export async function streamTurn(am: AM, messages: WireMsg[], system: string, signal: AbortSignal, onDelta?: (ans: string, think: string) => void, tools?: ToolSpec[]) {
+export async function streamTurn(am: AM, messages: WireMsg[], system: string, signal: AbortSignal, onDelta?: (ans: string, think: string) => void, tools?: ToolSpec[], params?: Params) {
   let full = '', reason = '', usage: Partial<Usage> = {};
   const acc: { index: number; id: string; name: string; args: string }[] = [];
-  for await (const ch of chatStream({ ep: am.ep, model: am.model, messages, system, params: {}, thinking: useSettings.getState().thinking, signal, ...(tools?.length ? { tools } : {}) })) {
+  for await (const ch of chatStream({ ep: am.ep, model: am.model, messages, system, params: params ?? {}, thinking: useSettings.getState().thinking, signal, ...(tools?.length ? { tools } : {}) })) {
     if (ch.kind === 'text') full += ch.text;
     else if (ch.kind === 'think') reason += ch.text;
     else if (ch.kind === 'tool') {
@@ -51,7 +55,7 @@ export async function streamTurn(am: AM, messages: WireMsg[], system: string, si
       const j = JSON.parse(e.args);
       return j && typeof j === 'object' && !Array.isArray(j) ? { id, name: e.name, args: j } : { id, name: e.name, args: {}, err: 'وسائط الأداة يجب أن تكون كائن JSON.' };
     } catch {
-      return { id, name: e.name, args: {}, err: 'وسائط الأداة ليست JSON صالحًا (ربما انقطع الرد).' };
+      return { id, name: e.name, args: {}, err: 'وسائط الأداة ليست JSON صالحًا (على الأرجح انقطع ردك لطوله). قسّم المحتوى إلى ملفات/أجزاء أصغر وأعد المحاولة.' };
     }
   });
   return { text: sp.ans, think: [reason, sp.think].filter(Boolean).join('\n\n'), usage, calls };
@@ -78,7 +82,25 @@ export async function searchForChat(query: string, signal: AbortSignal) {
 /* ---------------- أدوات الوكيل ---------------- */
 const ctxFlags = () => ({ mem: useSettings.getState().memory.enabled });
 
-type ToolCtx = { plan: any[]; am: AM; conf: AgentConf };
+type ToolCtx = { plan: any[]; am: AM; conf: AgentConf; chatId?: string };
+
+const normPlan = (items: any[]): PlanItem[] =>
+  items.slice(0, 30).map((it) => ({ t: String(it?.t ?? it?.title ?? (typeof it === 'string' ? it : '')).slice(0, 200), done: !!it?.done })).filter((x) => x.t);
+
+/** ملفات مشروع المحادثة الحالي (فارغة إن لم يوجد) */
+async function wsFiles(st: ToolCtx): Promise<Files> {
+  if (!st.chatId) throw new Error('أدوات المشروع تحتاج محادثة نشطة.');
+  await loadWorkspaces();
+  return getProject(st.chatId)?.files ?? {};
+}
+/** يطبّق عملية على ملفات المشروع: إن رمت خطأً لا يُحفظ شيء */
+async function wsMutate(st: ToolCtx, op: (f: Files) => { files: Files; msg: string }): Promise<string> {
+  const cur = await wsFiles(st);
+  const r = op(cur);
+  const isNew = !getProject(st.chatId!);
+  await updateProject(st.chatId!, () => ({ files: r.files, ...(isNew && st.plan.length ? { plan: normPlan(st.plan) } : {}) }));
+  return r.msg;
+}
 
 async function execTool(name: string, a: Record<string, any>, signal: AbortSignal, st: ToolCtx, progress?: (t: string) => void): Promise<string> {
   const S = useSettings.getState();
@@ -113,9 +135,55 @@ async function execTool(name: string, a: Record<string, any>, signal: AbortSigna
       const ans = await useAsk.getState().push(qs);
       return formatAsk(qs, ans);
     }
+    case 'fs_write': return wsMutate(st, (f) => wsWrite(f, a.files));
+    case 'fs_edit': return wsMutate(st, (f) => wsEdit(f, a.path, a.edits));
+    case 'fs_delete': return wsMutate(st, (f) => wsDelete(f, a.path));
+    case 'fs_move': return wsMutate(st, (f) => wsMove(f, a.from, a.to));
+    case 'fs_read': return wsRead(await wsFiles(st), a.path, a.from, a.to);
+    case 'fs_list': return wsList(await wsFiles(st), a.dir);
+    case 'fs_search': return wsSearch(await wsFiles(st), a.pattern, { path: a.path, regex: a.regex });
+    case 'scaffold_project': {
+      const msg = await wsMutate(st, (f) => {
+        const n = Object.keys(f).length;
+        if (n && !a.force) throw new Error(`مساحة العمل ليست فارغة (${n} ملف). عدّل الملفات الموجودة، أو مرّر force:true لكتابة الهيكل فوقها.`);
+        const nf = scaffold(a.template, a.name, { ci: !!a.ci });
+        const w = wsWrite(f, Object.entries(nf).map(([path, content]) => ({ path, content })));
+        return { files: w.files, msg: `أُنشئ هيكل ${a.template}:\n` + Object.keys(nf).sort().map((k) => '+ ' + k).join('\n') };
+      });
+      if (a.name) await updateProject(st.chatId!, () => ({ name: String(a.name).slice(0, 60) }));
+      return msg;
+    }
+    case 'check_project': {
+      const files = await wsFiles(st);
+      const iss = lintProject(files);
+      const out = formatIssues(iss, files);
+      if (iss.some((x) => x.level === 'error')) throw new Error(out);
+      return out;
+    }
+    case 'run_project': {
+      const html = buildWebPreview(await wsFiles(st), a.entry);
+      progress?.('يشغّل الصفحة ويراقب الأخطاء…');
+      const r = await runWebPage(html, +a.wait_ms || 2500, signal);
+      const out = formatRun(r.msgs, r.loaded) + '\nملاحظة: الشبكة محجوبة في بيئة الاختبار، فطلبات fetch/APIs ستفشل هنا حتى لو كانت سليمة.';
+      if (!r.loaded || r.msgs.some((m) => m.t === 'error')) throw new Error(out);
+      return out;
+    }
+    case 'preview_project': {
+      usePreviewHost.getState().open(buildWebPreview(await wsFiles(st), a.entry));
+      return 'عُرضت المعاينة للمستخدم في نافذة تفاعلية.';
+    }
+    case 'export_project': {
+      const files = await wsFiles(st);
+      const r = await exportZip(files, String(a.name || getProject(st.chatId)?.name || 'project'));
+      return `صُدّر ${r.count} ملف (${Math.max(1, Math.round(r.bytes / 1024))}KB) في ${r.file} وفُتحت المشاركة للمستخدم.`;
+    }
     case 'run_js': return await runJs(String(a.code), signal, undefined, progress);
     case 'delegate': return await delegateTasks(a, signal, st, progress);
-    case 'plan': st.plan = Array.isArray(a.items) ? a.items : []; return 'سُجّلت الخطة.';
+    case 'plan': {
+      st.plan = Array.isArray(a.items) ? a.items : [];
+      if (st.chatId && getProject(st.chatId)) await updateProject(st.chatId, () => ({ plan: normPlan(st.plan) }));
+      return 'سُجّلت الخطة.';
+    }
     case 'manage_tasks': return manageTasks(a);
     case 'create_file': {
       const FS = require('expo-file-system/legacy');
@@ -193,18 +261,22 @@ const looksLikeToolError = (m: string) => /tool|function|schema|parameter/i.test
 
 /** حلقة الوكيل: تعيد الجواب النهائي والخطوات. تستخدم الاستدعاء الأصلي للأدوات حيث يتوفر وإلا كتل ```tool النصية */
 export async function agentLoop(o: {
-  am: AM; history: WireMsg[]; system: string; signal: AbortSignal; conf: AgentConf;
+  am: AM; history: WireMsg[]; system: string; signal: AbortSignal; conf: AgentConf; chatId?: string; params?: Params;
   onStep?: (steps: AgentStep[]) => void; onDelta?: (ans: string, think: string) => void; onStatus?: (s: string) => void;
 }) {
   const { am, signal, conf } = o;
   const flags = ctxFlags();
-  const names = availableTools(conf, flags);
+  // أدوات المشروع تحتاج محادثة (لكل محادثة مساحة عمل)؛ الوكلاء الفرعيون بلا محادثة فلا يرونها
+  const names = availableTools(conf, flags).filter((n) => o.chatId || !WS_TOOLS.includes(n));
+  const wsOn = names.some((n) => WS_TOOLS.includes(n));
+  if (wsOn) await loadWorkspaces();
   let native = conf.native !== false && NATIVE_PROTOS.includes(am.ep.proto) && names.length > 0;
   const specs = toolSpecs(names);
-  const sysFor = () => [o.system, native ? nativePrompt(names, conf) : buildPrompt(names, conf)].filter(Boolean).join('\n\n');
+  const wsCtx = () => { const p = getProject(o.chatId); return wsOn ? wsContext(p?.files ?? {}, p?.plan, p?.name) : ''; };
+  const sysFor = () => [o.system, native ? nativePrompt(names, conf) : buildPrompt(names, conf), wsCtx()].filter(Boolean).join('\n\n');
   let hist: WireMsg[] = [...o.history];
   const steps: AgentStep[] = [];
-  const st: ToolCtx = { plan: [], am, conf };
+  const st: ToolCtx = { plan: [], am, conf, chatId: o.chatId };
   const seen = new Set<string>();
   let tainted = false;
   let used = 0;
@@ -218,7 +290,7 @@ export async function agentLoop(o: {
     o.onStatus?.(turn ? 'يفكّر…' : '');
     let r: Awaited<ReturnType<typeof streamTurn>>;
     try {
-      r = await streamTurn(am, compact(hist) as WireMsg[], sysFor(), signal, (a, t) => o.onDelta?.(join(prevText, stripToolBlocks(a)), join(prevThink, t)), native ? specs : undefined);
+      r = await streamTurn(am, condenseHistory(compact(hist) as WireMsg[]) as WireMsg[], sysFor(), signal, (a, t) => o.onDelta?.(join(prevText, stripToolBlocks(a)), join(prevThink, t)), native ? specs : undefined, o.params);
     } catch (e) {
       // مزوّد/نموذج لا يدعم الأدوات الأصلية: نعود للكتل النصية (ممكن فقط قبل أي استدعاء أداة لأن السجل لا يزال نصيًا)
       if (native && !signal.aborted && (e as any)?.name !== 'AbortError' && !hist.some((m) => m.toolCalls?.length) && looksLikeToolError(e instanceof Error ? e.message : String(e))) {
@@ -232,9 +304,11 @@ export async function agentLoop(o: {
     usage = mergeUsage(usage as Usage, r.usage);
     finalThink = join(prevThink, r.think);
     const items: Item[] = native
-      ? r.calls.map((c) => ({ id: c.id, name: c.name, args: c.args, ...(c.err ? { error: c.err } : {}) }))
-      : parseCalls(r.text, conf.parallel === false ? 1 : 3).map((pc) => ('error' in pc ? { id: 'call_' + uid(8), name: 'invalid', args: {}, error: pc.error } : { id: 'call_' + uid(8), name: pc.call.name, args: pc.call.args }));
-    if (!items.length || used >= conf.maxSteps) { finalText = join(prevText, stripToolBlocks(r.text) || (used >= conf.maxSteps ? 'بلغتُ الحد الأقصى من الخطوات.' : '')); break; }
+      ? r.calls.map((c) => ({ id: c.id, name: c.name, args: normalizeArgs(c.name, c.args), ...(c.err ? { error: c.err } : {}) }))
+      : parseCalls(r.text, conf.parallel === false ? 1 : 3).map((pc) => ('error' in pc ? { id: 'call_' + uid(8), name: 'invalid', args: {}, error: pc.error } : { id: 'call_' + uid(8), name: pc.call.name, args: normalizeArgs(pc.call.name, pc.call.args) }));
+    // ردّ انقطع داخل كتلة tool لم تُغلق: لا نعدّه جوابًا نهائيًا بل نطلب إعادة المحاولة بحجم أصغر
+    if (!native && !items.length && /```[ \t]*tool[ \t]*\r?\n(?![\s\S]*```)/i.test(r.text)) items.push({ id: 'call_' + uid(8), name: 'invalid', args: {}, error: 'انقطع ردك داخل كتلة tool لم تُغلق (على الأرجح لطول المحتوى). أعد الاستدعاء بمحتوى أصغر: ملف واحد أقصر أو أجزاء متتابعة.' });
+    if (!items.length || used >= conf.maxSteps) { finalText = join(prevText, stripToolBlocks(r.text) || (used >= conf.maxSteps ? (wsOn && getProject(o.chatId)?.files && Object.keys(getProject(o.chatId)!.files).length ? `بلغتُ حد الخطوات (${conf.maxSteps}) قبل أن أنتهي. المشروع محفوظ بكل ملفاته؛ اكتب «كمّل» لأتابع من حيث توقفت (أو ارفع الحد من إعدادات الوكيل).` : 'بلغتُ الحد الأقصى من الخطوات.') : '')); break; }
     hist.push(native ? { role: 'assistant', content: r.text, toolCalls: items.map((i) => ({ id: i.id, name: i.name, args: i.args })) } : { role: 'assistant', content: r.text });
     prevText = join(prevText, stripToolBlocks(r.text));
     prevThink = finalThink;
@@ -254,7 +328,7 @@ export async function agentLoop(o: {
       const bad = !names.includes(name) ? 'أداة غير متاحة.' : validate(name, args);
       if (bad) { finish('error', bad); continue; }
       const key = name + JSON.stringify(args);
-      if (seen.has(key) && name !== 'plan') { finish('error', 'استدعاء مكرر بنفس الوسائط؛ استخدم النتيجة السابقة.'); continue; }
+      if (seen.has(key) && !REPEATABLE.includes(name)) { finish('error', 'استدعاء مكرر بنفس الوسائط؛ استخدم النتيجة السابقة.'); continue; }
       seen.add(key);
       if (needsApproval(name, args, conf, tainted || queuedExt)) {
         const ok = await confirmAsk('يطلب الوكيل تنفيذ: ' + AG_TOOLS[name].label, JSON.stringify(args, null, 1).slice(0, 500), { confirm: 'موافق', cancel: 'رفض' });

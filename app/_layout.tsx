@@ -16,6 +16,8 @@ import { runDueTasks, syncTaskNotifications } from '../src/api/engines';
 import { registerBackground } from '../src/api/background';
 import { Intro } from '../src/components/Intro';
 import { JsSandbox } from '../src/components/JsSandbox';
+import { WorkspaceHost } from '../src/components/WorkspaceHost';
+import { loadWorkspaces } from '../src/store/workspace';
 import { LockScreen } from '../src/components/LockScreen';
 import { Sidebar } from '../src/components/Sidebar';
 import { RTL, Toast } from '../src/components/ui/kit';
@@ -59,6 +61,7 @@ function Shell() {
 
   useEffect(() => {
     void runDueTasks().then(() => syncTaskNotifications());
+    void loadWorkspaces();
     void registerBackground();
     const sub = AppState.addEventListener('change', (st) => { if (st === 'active') void runDueTasks().then(() => syncTaskNotifications()); });
     return () => { sub.remove(); };
@@ -86,6 +89,7 @@ function Shell() {
       <GlobalDialogs />
       <AskSheet />
       <JsSandbox />
+      <WorkspaceHost />
       {locked ? <LockScreen /> : null}
       {intro && !locked ? <Intro onDone={() => setIntro(false)} /> : null}
     </RTL>
