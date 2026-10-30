@@ -1,4 +1,4 @@
-import type { Endpoint, Params, ThinkingMode, WireMsg } from './types';
+import type { Endpoint, Params, ThinkingMode, ToolSpec, WireMsg } from './types';
 
 export interface BuildArgs {
   ep: Endpoint;
@@ -8,6 +8,8 @@ export interface BuildArgs {
   params: Params;
   stream: boolean;
   thinking?: ThinkingMode;
+  /** أدوات للاستدعاء الأصلي (OpenAI-compatible وAnthropic فقط) */
+  tools?: ToolSpec[];
   /** حقول رفضها المزوّد سابقًا — تُحذف عند إعادة المحاولة */
   drop?: Set<string>;
 }
@@ -32,7 +34,14 @@ export function buildRequest(a: BuildArgs): Built {
   const use = (k: string) => !drop.has(k);
 
   if (ep.proto === 'anthropic') {
-    const messages = a.messages.map((m) => ({
+    const messages = a.messages.map((m) => {
+      if (m.toolResults?.length) {
+        return { role: 'user', content: m.toolResults.map((r) => ({ type: 'tool_result', tool_use_id: r.id, content: r.content || ' ', ...(r.ok ? {} : { is_error: true }) })) };
+      }
+      if (m.toolCalls?.length) {
+        return { role: 'assistant', content: [...(m.content.trim() ? [{ type: 'text', text: m.content }] : []), ...m.toolCalls.map((c) => ({ type: 'tool_use', id: c.id, name: c.name, input: c.args }))] };
+      }
+      return {
       role: m.role,
       content: m.images?.length
         ? [
@@ -40,9 +49,11 @@ export function buildRequest(a: BuildArgs): Built {
             { type: 'text', text: m.content || ' ' },
           ]
         : m.content || ' ',
-    }));
+      };
+    });
     const body: Record<string, any> = { model, max_tokens: P.max_tokens ?? 4096, stream, messages };
     if (system) body.system = system;
+    if (a.tools?.length) body.tools = a.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
     if (!NO_SAMPLING_ANTHROPIC.test(model)) {
       if (P.temperature != null && use('temperature')) body.temperature = Math.min(P.temperature, 1);
       else if (P.top_p != null && use('top_p')) body.top_p = P.top_p;
@@ -102,6 +113,14 @@ export function buildRequest(a: BuildArgs): Built {
   const messages: any[] = [];
   if (system) messages.push({ role: 'system', content: system });
   for (const m of a.messages) {
+    if (m.toolResults?.length) {
+      for (const r of m.toolResults) messages.push({ role: 'tool', tool_call_id: r.id, content: r.content || ' ' });
+      continue;
+    }
+    if (m.toolCalls?.length) {
+      messages.push({ role: 'assistant', content: m.content || '', tool_calls: m.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args ?? {}) } })) });
+      continue;
+    }
     if (m.images?.length) {
       messages.push({
         role: m.role,
@@ -113,6 +132,7 @@ export function buildRequest(a: BuildArgs): Built {
     } else messages.push({ role: m.role, content: m.content });
   }
   const body: Record<string, any> = { model, messages, stream };
+  if (a.tools?.length) body.tools = a.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
   if (stream && use('stream_options')) body.stream_options = { include_usage: true };
   if (!NO_SAMPLING.test(model)) {
     if (P.temperature != null && use('temperature')) body.temperature = P.temperature;

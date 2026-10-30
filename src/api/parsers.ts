@@ -65,6 +65,12 @@ export function parseEvent(proto: Proto, j: any): Chunk[] {
     const rs = d?.reasoning_content ?? d?.reasoning;
     if (typeof rs === 'string' && rs) out.push({ kind: 'think', text: rs });
     if (typeof d?.content === 'string' && d.content) out.push({ kind: 'text', text: d.content });
+    if (Array.isArray(d?.tool_calls)) {
+      for (const tc of d.tool_calls) {
+        if (!tc || typeof tc !== 'object') continue;
+        out.push({ kind: 'tool', index: typeof tc.index === 'number' ? tc.index : 0, id: tc.id || undefined, name: tc.function?.name || undefined, args: typeof tc.function?.arguments === 'string' ? tc.function.arguments : undefined });
+      }
+    }
     if (j.usage) {
       out.push({
         kind: 'usage',
@@ -79,8 +85,11 @@ export function parseEvent(proto: Proto, j: any): Chunk[] {
     if (j.type === 'error') throw new Error(j.error?.message || 'خطأ من الخادم');
     if (j.type === 'message_start' && j.message?.usage) {
       out.push({ kind: 'usage', usage: { in: num(j.message.usage.input_tokens), out: num(j.message.usage.output_tokens) } });
+    } else if (j.type === 'content_block_start' && j.content_block?.type === 'tool_use') {
+      out.push({ kind: 'tool', index: typeof j.index === 'number' ? j.index : 0, id: j.content_block.id, name: j.content_block.name });
     } else if (j.type === 'content_block_delta') {
-      if (j.delta?.type === 'thinking_delta' || j.delta?.thinking) out.push({ kind: 'think', text: j.delta.thinking });
+      if (j.delta?.type === 'input_json_delta') out.push({ kind: 'tool', index: typeof j.index === 'number' ? j.index : 0, args: String(j.delta.partial_json ?? '') });
+      else if (j.delta?.type === 'thinking_delta' || j.delta?.thinking) out.push({ kind: 'think', text: j.delta.thinking });
       else if (j.delta?.text) out.push({ kind: 'text', text: j.delta.text });
     } else if (j.type === 'message_delta' && j.usage) {
       out.push({ kind: 'usage', usage: { out: num(j.usage.output_tokens), in: num(j.usage.input_tokens) } });

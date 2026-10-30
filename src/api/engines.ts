@@ -1,21 +1,20 @@
-/** محركات التنفيذ: أدوات الوكيل، حلقة الوكيل، البحث العميق، المهام، Webhooks. */
-import * as Crypto from 'expo-crypto';
+/** محركات التنفيذ: أدوات الوكيل، حلقة الوكيل، البحث العميق، المهام. */
 import { useChats } from '../store/chats';
 import { toast, useMemory } from '../store/data';
-import { confirmAsk, useDialogs, useInteg, useResearch, useTasks, type Task } from '../store/features';
+import { confirmAsk, useAsk, useDialogs, useResearch, useTasks, type Task } from '../store/features';
 import { activeModel, useSettings } from '../store/settings';
 import { estTokens, shortModel, uid } from '../lib/util';
 import { pickMemories } from '../lib/memoryRank';
 import { nextRun, validateSchedule, type Schedule } from '../lib/schedule';
-import { AG_TOOLS, availableTools, buildPrompt, calc, compact, needsApproval, parseCalls, stripToolBlocks, validate, wrapResult, type AgentConf } from './agentCore';
-import { buildApiRequest, catalog, hmacSha256Hex, isMutating, parseApiCall, type ApiCall } from './integCore';
+import { AG_TOOLS, MAX_SUB_TASKS, PARALLEL_SAFE, SUB_SYSTEM, availableTools, buildPrompt, calc, compact, formatAsk, nativePrompt, needsApproval, parseAsk, parseCalls, stripToolBlocks, subConf, toolSpecs, validate, wrapResult, type AgentConf } from './agentCore';
 import { addSource, buildReportPrompt, EXTRACT_PROMPT, parsePlan, PLAN_PROMPT, referencesMd, type Source } from './researchCore';
 import { chatStream, completeOnce } from './stream';
 import { mergeUsage, splitThink } from './parsers';
 import { fetchPage, webSearch } from './web';
 import { researchAM } from './chains';
-import { fetch as xfetch } from 'expo/fetch';
-import type { AgentStep, Endpoint, Usage, WireMsg } from './types';
+import type { AgentStep, Endpoint, ToolCall, ToolResult, ToolSpec, Usage, WireMsg } from './types';
+import { runJs } from '../lib/jsSandbox';
+import { registerStep, unregisterStep } from './stepCancel';
 import { log, logErr } from '../store/logs';
 
 type AM = { ep: Endpoint; model: string };
@@ -27,17 +26,35 @@ export async function ask(prompt: string, system = '', signal?: AbortSignal, am:
   return splitThink(t).ans.trim();
 }
 
-/** بث دور واحد وجمع النص */
-export async function streamTurn(am: AM, messages: WireMsg[], system: string, signal: AbortSignal, onDelta?: (ans: string, think: string) => void) {
+/** بث دور واحد وجمع النص (+ استدعاءات الأدوات الأصلية إن مُرِّرت tools) */
+export async function streamTurn(am: AM, messages: WireMsg[], system: string, signal: AbortSignal, onDelta?: (ans: string, think: string) => void, tools?: ToolSpec[]) {
   let full = '', reason = '', usage: Partial<Usage> = {};
-  for await (const ch of chatStream({ ep: am.ep, model: am.model, messages, system, params: {}, thinking: useSettings.getState().thinking, signal })) {
+  const acc: { index: number; id: string; name: string; args: string }[] = [];
+  for await (const ch of chatStream({ ep: am.ep, model: am.model, messages, system, params: {}, thinking: useSettings.getState().thinking, signal, ...(tools?.length ? { tools } : {}) })) {
     if (ch.kind === 'text') full += ch.text;
     else if (ch.kind === 'think') reason += ch.text;
-    else usage = mergeUsage(usage as Usage, ch.usage);
+    else if (ch.kind === 'tool') {
+      let e = [...acc].reverse().find((x) => x.index === ch.index);
+      // معرّف جديد على نفس الفهرس = استدعاء جديد (بعض المزوّدين لا يرسلون index صحيحًا)
+      if (!e || (ch.id && e.id && ch.id !== e.id)) { e = { index: ch.index, id: '', name: '', args: '' }; acc.push(e); }
+      if (ch.id) e.id = ch.id;
+      if (ch.name) e.name = ch.name;
+      if (ch.args) e.args += ch.args;
+    } else usage = mergeUsage(usage as Usage, ch.usage);
     onDelta?.(splitThink(full).ans, [reason, splitThink(full).think].filter(Boolean).join('\n\n'));
   }
   const sp = splitThink(full);
-  return { text: sp.ans, think: [reason, sp.think].filter(Boolean).join('\n\n'), usage };
+  const calls: ToolCall[] = acc.filter((e) => e.name).map((e) => {
+    const id = e.id || 'call_' + uid(8);
+    if (!e.args.trim()) return { id, name: e.name, args: {} };
+    try {
+      const j = JSON.parse(e.args);
+      return j && typeof j === 'object' && !Array.isArray(j) ? { id, name: e.name, args: j } : { id, name: e.name, args: {}, err: 'وسائط الأداة يجب أن تكون كائن JSON.' };
+    } catch {
+      return { id, name: e.name, args: {}, err: 'وسائط الأداة ليست JSON صالحًا (ربما انقطع الرد).' };
+    }
+  });
+  return { text: sp.ans, think: [reason, sp.think].filter(Boolean).join('\n\n'), usage, calls };
 }
 
 /* ---------------- بحث الويب للمحادثة ---------------- */
@@ -59,29 +76,20 @@ export async function searchForChat(query: string, signal: AbortSignal) {
 }
 
 /* ---------------- أدوات الوكيل ---------------- */
-const ctxFlags = () => ({ integ: useInteg.getState().items.some((i) => i.enabled), mem: useSettings.getState().memory.enabled });
+const ctxFlags = () => ({ mem: useSettings.getState().memory.enabled });
 
-export async function runApiCall(c: ApiCall, signal?: AbortSignal, approve = true): Promise<string> {
-  const integ = useInteg.getState().items.find((i) => i.id === c.integration || i.name.toLowerCase() === String(c.integration).toLowerCase());
-  if (!integ) throw new Error('تكامل غير موجود: ' + c.integration);
-  const req = buildApiRequest(integ, c);
-  if (approve && isMutating(req.method)) {
-    const ok = await confirmAsk('طلب يغيّر بيانات', `${req.method} ${integ.name}${c.path}\n${c.body ? JSON.stringify(c.body).slice(0, 300) : ''}`, { confirm: 'نفّذ', danger: true });
-    if (!ok) throw new Error('رفض المستخدم تنفيذ الطلب.');
-  }
-  const r = await xfetch(req.url, { method: req.method, headers: req.headers, body: req.body, signal });
-  const txt = await r.text();
-  return `HTTP ${r.status}\n` + txt.slice(0, 6000);
-}
+type ToolCtx = { plan: any[]; am: AM; conf: AgentConf };
 
-async function execTool(name: string, a: Record<string, any>, signal: AbortSignal, st: { plan: any[] }): Promise<string> {
+async function execTool(name: string, a: Record<string, any>, signal: AbortSignal, st: ToolCtx, progress?: (t: string) => void): Promise<string> {
   const S = useSettings.getState();
   switch (name) {
     case 'web_search': {
+      progress?.('يبحث: ' + String(a.query).slice(0, 80));
       const { rows } = await webSearch(S.search, String(a.query), signal);
       return rows.slice(0, Math.min(10, +a.limit || 5)).map((r, i) => `${i + 1}. ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n') || 'لا نتائج.';
     }
     case 'read_url': {
+      progress?.('يقرأ: ' + String(a.url).slice(0, 100));
       const p = await fetchPage(String(a.url), Math.min(8000, +a.max_chars || 6000), signal);
       return `${p.title}\n${p.text}`;
     }
@@ -99,11 +107,14 @@ async function execTool(name: string, a: Record<string, any>, signal: AbortSigna
       if (!c) return 'محادثة غير موجودة.';
       return c.messages.slice(-(+a.limit || 20)).map((m) => `${m.role === 'user' ? 'المستخدم' : 'المساعد'}: ${m.content.slice(0, 800)}`).join('\n');
     }
-    case 'api_call': return runApiCall({ integration: a.integration, method: a.method || 'GET', path: a.path, params: a.params, body: a.body }, signal, false);
     case 'ask_user': {
-      const r = await useDialogs.getState().push({ title: 'سؤال من الوكيل', message: String(a.question), options: Array.isArray(a.options) ? a.options.map(String) : undefined, input: !a.options, confirm: 'إرسال', cancel: 'تخطّي' });
-      return r.ok ? r.value || '' : 'تخطّى المستخدم السؤال.';
+      const qs = parseAsk(a);
+      if (!qs.length) return 'لا توجد أسئلة.';
+      const ans = await useAsk.getState().push(qs);
+      return formatAsk(qs, ans);
     }
+    case 'run_js': return await runJs(String(a.code), signal, undefined, progress);
+    case 'delegate': return await delegateTasks(a, signal, st, progress);
     case 'plan': st.plan = Array.isArray(a.items) ? a.items : []; return 'سُجّلت الخطة.';
     case 'manage_tasks': return manageTasks(a);
     case 'create_file': {
@@ -117,6 +128,41 @@ async function execTool(name: string, a: Record<string, any>, signal: AbortSigna
     }
   }
   throw new Error('أداة غير معروفة.');
+}
+
+/** وكلاء فرعيون: كل مهمة تعمل بحلقة وكيل مستقلة (أدوات قراءة/بحث/حساب فقط) وبالتوازي، ثم تُجمع خلاصاتها */
+async function delegateTasks(a: Record<string, any>, signal: AbortSignal, st: ToolCtx, progress?: (t: string) => void): Promise<string> {
+  const raw = Array.isArray(a.tasks) ? a.tasks : [];
+  const tasks = raw
+    .map((t: any, i: number) => ({ title: String(t?.title || `مهمة ${i + 1}`).slice(0, 60), instructions: String(t?.instructions ?? t?.task ?? (typeof t === 'string' ? t : '')).trim() }))
+    .filter((t: { instructions: string }) => t.instructions)
+    .slice(0, MAX_SUB_TASKS);
+  if (!tasks.length) throw new Error('tasks يجب أن تكون قائمة فيها instructions لكل مهمة.');
+  const lines = tasks.map((t: { title: string }) => `◌ ${t.title}: يبدأ…`);
+  const show = () => progress?.(lines.join('\n'));
+  show();
+  const conf = subConf(st.conf);
+  const results = await Promise.all(
+    tasks.map(async (t: { title: string; instructions: string }, i: number) => {
+      try {
+        const r = await agentLoop({
+          am: st.am, signal, conf, system: SUB_SYSTEM,
+          history: [{ role: 'user', content: `المهمة: ${t.title}\n\n${t.instructions}` }],
+          onStep: (steps) => { const run = steps.filter((x) => x.status === 'run').length; lines[i] = `◐ ${t.title}: ${steps.length} خطوة${run ? ' (يعمل…)' : ''}`; show(); },
+        });
+        lines[i] = `✓ ${t.title}: انتهى (${r.steps.length} خطوة)`;
+        show();
+        return { t, ok: true, text: r.text.trim() || '(لا نتيجة)' };
+      } catch (e) {
+        if ((e as any)?.name === 'AbortError' || signal.aborted) throw e;
+        const msg = e instanceof Error ? e.message : String(e);
+        lines[i] = `✗ ${t.title}: ${msg.slice(0, 80)}`;
+        show();
+        return { t, ok: false, text: 'فشل: ' + msg };
+      }
+    }),
+  );
+  return results.map((r, i) => `### ${i + 1}. ${r.t.title}${r.ok ? '' : ' (فشل)'}\n${r.text.slice(0, 2500)}`).join('\n\n');
 }
 
 function manageTasks(a: Record<string, any>): string {
@@ -142,7 +188,10 @@ function manageTasks(a: Record<string, any>): string {
   return 'تم.';
 }
 
-/** حلقة الوكيل: تعيد الجواب النهائي والخطوات */
+const NATIVE_PROTOS = ['openai', 'anthropic'];
+const looksLikeToolError = (m: string) => /tool|function|schema|parameter/i.test(m);
+
+/** حلقة الوكيل: تعيد الجواب النهائي والخطوات. تستخدم الاستدعاء الأصلي للأدوات حيث يتوفر وإلا كتل ```tool النصية */
 export async function agentLoop(o: {
   am: AM; history: WireMsg[]; system: string; signal: AbortSignal; conf: AgentConf;
   onStep?: (steps: AgentStep[]) => void; onDelta?: (ans: string, think: string) => void; onStatus?: (s: string) => void;
@@ -150,52 +199,109 @@ export async function agentLoop(o: {
   const { am, signal, conf } = o;
   const flags = ctxFlags();
   const names = availableTools(conf, flags);
-  const integCat = names.includes('api_call') ? catalog(useInteg.getState().items) : '';
-  const system = [o.system, buildPrompt(names, conf, integCat)].filter(Boolean).join('\n\n');
+  let native = conf.native !== false && NATIVE_PROTOS.includes(am.ep.proto) && names.length > 0;
+  const specs = toolSpecs(names);
+  const sysFor = () => [o.system, native ? nativePrompt(names, conf) : buildPrompt(names, conf)].filter(Boolean).join('\n\n');
   let hist: WireMsg[] = [...o.history];
   const steps: AgentStep[] = [];
-  const st = { plan: [] as any[] };
+  const st: ToolCtx = { plan: [], am, conf };
   const seen = new Set<string>();
   let tainted = false;
   let used = 0;
   let usage: Partial<Usage> = {};
   let finalText = '', finalThink = '';
+  // نصوص الأدوار السابقة (الكلام قبل استدعاء الأدوات) تُحفظ ولا تُستبدل بنص الدور التالي
+  let prevText = '', prevThink = '';
+  const join = (a: string, b: string) => [a, b].filter((x) => x && x.trim()).join('\n\n');
+  type Item = { id: string; name: string; args: Record<string, any>; error?: string };
   for (let turn = 0; turn < conf.maxSteps + 2; turn++) {
     o.onStatus?.(turn ? 'يفكّر…' : '');
-    const r = await streamTurn(am, compact(hist) as WireMsg[], system, signal, (a, t) => o.onDelta?.(stripToolBlocks(a), t));
+    let r: Awaited<ReturnType<typeof streamTurn>>;
+    try {
+      r = await streamTurn(am, compact(hist) as WireMsg[], sysFor(), signal, (a, t) => o.onDelta?.(join(prevText, stripToolBlocks(a)), join(prevThink, t)), native ? specs : undefined);
+    } catch (e) {
+      // مزوّد/نموذج لا يدعم الأدوات الأصلية: نعود للكتل النصية (ممكن فقط قبل أي استدعاء أداة لأن السجل لا يزال نصيًا)
+      if (native && !signal.aborted && (e as any)?.name !== 'AbortError' && !hist.some((m) => m.toolCalls?.length) && looksLikeToolError(e instanceof Error ? e.message : String(e))) {
+        log('agent', 'الاستدعاء الأصلي للأدوات غير مدعوم، التحويل للكتل النصية: ' + (e instanceof Error ? e.message : String(e)), 'warn');
+        native = false;
+        turn--;
+        continue;
+      }
+      throw e;
+    }
     usage = mergeUsage(usage as Usage, r.usage);
-    finalThink = r.think;
-    const calls = parseCalls(r.text);
-    if (!calls.length || used >= conf.maxSteps) { finalText = stripToolBlocks(r.text) || (used >= conf.maxSteps ? 'بلغتُ الحد الأقصى من الخطوات.' : ''); break; }
-    hist.push({ role: 'assistant', content: r.text });
-    const results: string[] = [];
-    for (const pc of calls) {
-      if ('error' in pc) { results.push(wrapResult('invalid', false, pc.error)); continue; }
-      const { name, args } = pc.call;
-      const step: AgentStep = { id: uid(5), tool: name, args, status: 'run', ts: Date.now() };
+    finalThink = join(prevThink, r.think);
+    const items: Item[] = native
+      ? r.calls.map((c) => ({ id: c.id, name: c.name, args: c.args, ...(c.err ? { error: c.err } : {}) }))
+      : parseCalls(r.text, conf.parallel === false ? 1 : 3).map((pc) => ('error' in pc ? { id: 'call_' + uid(8), name: 'invalid', args: {}, error: pc.error } : { id: 'call_' + uid(8), name: pc.call.name, args: pc.call.args }));
+    if (!items.length || used >= conf.maxSteps) { finalText = join(prevText, stripToolBlocks(r.text) || (used >= conf.maxSteps ? 'بلغتُ الحد الأقصى من الخطوات.' : '')); break; }
+    hist.push(native ? { role: 'assistant', content: r.text, toolCalls: items.map((i) => ({ id: i.id, name: i.name, args: i.args })) } : { role: 'assistant', content: r.text });
+    prevText = join(prevText, stripToolBlocks(r.text));
+    prevThink = finalThink;
+
+    const outs: (ToolResult | undefined)[] = new Array(items.length).fill(undefined);
+    const queue: { i: number; item: Item; step: AgentStep }[] = [];
+    const ctls = new Map<string, AbortController>();
+    let queuedExt = false;
+    // 1) تحقق وموافقات بالتسلسل (حوارات المستخدم لا تتوازى)
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.error) { outs[i] = { id: item.id, name: item.name, ok: false, content: wrapResult(item.name, false, item.error) }; continue; }
+      const { name, args } = item;
+      const step: AgentStep = { id: uid(5), tool: name, args, status: 'run', ts: Date.now(), at: prevText.length };
       steps.push(step); o.onStep?.([...steps]);
-      const finish = (status: AgentStep['status'], text: string) => { step.status = status; step.result = text.slice(0, 1500); o.onStep?.([...steps]); results.push(wrapResult(name, status === 'ok', text)); };
+      const finish = (status: AgentStep['status'], text: string) => { step.status = status; step.result = text.slice(0, 1500); o.onStep?.([...steps]); outs[i] = { id: item.id, name, ok: status === 'ok', content: wrapResult(name, status === 'ok', text) }; };
       const bad = !names.includes(name) ? 'أداة غير متاحة.' : validate(name, args);
       if (bad) { finish('error', bad); continue; }
       const key = name + JSON.stringify(args);
       if (seen.has(key) && name !== 'plan') { finish('error', 'استدعاء مكرر بنفس الوسائط؛ استخدم النتيجة السابقة.'); continue; }
       seen.add(key);
-      if (needsApproval(name, args, conf, tainted)) {
+      if (needsApproval(name, args, conf, tainted || queuedExt)) {
         const ok = await confirmAsk('يطلب الوكيل تنفيذ: ' + AG_TOOLS[name].label, JSON.stringify(args, null, 1).slice(0, 500), { confirm: 'موافق', cancel: 'رفض' });
         if (!ok) { finish('denied', 'رفض المستخدم هذا الإجراء.'); continue; }
       }
       used++;
+      if (AG_TOOLS[name].risk === 'ext') queuedExt = true;
+      // مُتحكّم لكل خطوة يرتبط بالإلغاء العام، ليمكن إلغاء خطوة واحدة من الواجهة
+      const ctl = new AbortController();
+      signal.addEventListener('abort', () => ctl.abort(), { once: true });
+      ctls.set(step.id, ctl);
+      registerStep(step.id, ctl);
+      queue.push({ i, item, step });
+    }
+    // 2) التنفيذ: الأدوات المستقلة المتتالية معًا، والباقي بالتسلسل
+    const run = async (q: { i: number; item: Item; step: AgentStep }) => {
+      const { item, step, i } = q;
+      const ctl = ctls.get(step.id)!;
+      const finish = (status: AgentStep['status'], text: string) => { unregisterStep(step.id); step.status = status; step.result = text.slice(0, 1500); o.onStep?.([...steps]); outs[i] = { id: item.id, name: item.name, ok: status === 'ok', content: wrapResult(item.name, status === 'ok', text) }; };
+      if (ctl.signal.aborted) { finish('cancelled', 'ألغى المستخدم هذه الخطوة قبل أن تبدأ.'); return; }
+      let last = 0;
+      // عرض مباشر لما ينتجه الأداة أثناء تنفيذها (مع تخفيف التحديثات)
+      const progress = (t: string) => { step.result = t.slice(-1500); const now = Date.now(); if (now - last > 150) { last = now; o.onStep?.([...steps]); } };
       try {
-        const out = await execTool(name, args, signal, st);
-        if (AG_TOOLS[name].risk === 'ext') tainted = true;
+        const out = await execTool(item.name, item.args, ctl.signal, st, progress);
+        if (AG_TOOLS[item.name].risk === 'ext') tainted = true;
         finish('ok', out);
       } catch (e) {
-        if ((e as any)?.name === 'AbortError' || signal.aborted) throw e;
-        log('agent', `${name}: ${e instanceof Error ? e.message : String(e)}`, 'warn');
+        if (signal.aborted) { unregisterStep(step.id); throw e; }
+        if (ctl.signal.aborted) { finish('cancelled', 'ألغى المستخدم هذه الخطوة.'); return; }
+        if ((e as any)?.name === 'AbortError') { unregisterStep(step.id); throw e; }
+        log('agent', `${item.name}: ${e instanceof Error ? e.message : String(e)}`, 'warn');
         finish('error', e instanceof Error ? e.message : String(e));
       }
+    };
+    const par = (q: { item: Item }) => conf.parallel !== false && PARALLEL_SAFE.includes(q.item.name);
+    for (let k = 0; k < queue.length;) {
+      if (par(queue[k])) {
+        let e = k;
+        while (e < queue.length && par(queue[e])) e++;
+        await Promise.all(queue.slice(k, e).map(run));
+        k = e;
+      } else { await run(queue[k]); k++; }
     }
-    hist.push({ role: 'user', content: results.join('\n\n') });
+    for (const id of ctls.keys()) unregisterStep(id);
+    const results: ToolResult[] = outs.map((x, i) => x ?? { id: items[i].id, name: items[i].name, ok: false, content: wrapResult(items[i].name, false, 'لم تُنفَّذ.') });
+    hist.push(native ? { role: 'user', content: '', toolResults: results } : { role: 'user', content: results.map((x) => x.content).join('\n\n') });
   }
   return { text: finalText, think: finalThink, steps, usage };
 }
@@ -347,18 +453,4 @@ export async function syncTaskNotifications() {
     const items = useTasks.getState().items.filter((t) => t.enabled && t.next && t.next > Date.now()).sort((a, b) => a.next! - b.next!).slice(0, 40);
     for (const t of items) await N.scheduleNotificationAsync({ content: { title: '⏰ ' + t.name, body: 'افتح QUARK لتشغيل المهمة المجدولة.', data: { task: t.id } }, trigger: { type: 'date', date: new Date(t.next!) } });
   } catch {}
-}
-
-/* ---------------- Webhooks ---------------- */
-const digest = async (d: Uint8Array) => new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, d));
-export async function fireWebhooks(event: 'session.created' | 'chat.message' | 'chat.completed', payload: { chatId: string; text?: string }) {
-  for (const h of useInteg.getState().hooks) {
-    if (!h.enabled || !h.events.includes(event)) continue;
-    try {
-      const body = JSON.stringify({ event, ts: Date.now(), chat: payload.chatId, ...(h.withText && payload.text ? { text: payload.text } : {}) });
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (h.secret) headers['x-quark-signature'] = 'sha256=' + (await hmacSha256Hex(h.secret, body, digest));
-      await xfetch(h.url, { method: 'POST', headers, body });
-    } catch {}
-  }
 }

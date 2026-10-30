@@ -16,7 +16,6 @@ import { Icon, IconButton, T, haptic, type IconName } from './ui/kit';
 
 const NAV: { icon: IconName; label: string; href: string }[] = [
   { icon: 'book-open', label: 'المكتبة', href: '/library' },
-  { icon: 'mail', label: 'البريد', href: '/mail' },
   { icon: 'clock', label: 'المهام', href: '/tasks' },
   { icon: 'cpu', label: 'النماذج', href: '/models' },
 ];

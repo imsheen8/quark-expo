@@ -1,43 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Integration, Webhook } from '../api/integCore';
-import type { MailAccount, MailHead } from '../api/mailCore';
 import type { Source } from '../api/researchCore';
 import type { Schedule } from '../lib/schedule';
 import { nextRun } from '../lib/schedule';
 import { uid } from '../lib/util';
 import { persistStorage } from './storage';
-
-/* ---------- التكاملات ---------- */
-interface IntegState {
-  items: Integration[];
-  hooks: Webhook[];
-  add: (i: Omit<Integration, 'id'>) => string;
-  update: (id: string, p: Partial<Integration>) => void;
-  remove: (id: string) => void;
-  addHook: (h: Omit<Webhook, 'id'>) => void;
-  updateHook: (id: string, p: Partial<Webhook>) => void;
-  removeHook: (id: string) => void;
-}
-export const useInteg = create<IntegState>()(
-  persist(
-    (set) => ({
-      items: [],
-      hooks: [],
-      add: (i) => {
-        const id = 'i' + uid(6);
-        set((s) => ({ items: [...s.items, { ...i, id }] }));
-        return id;
-      },
-      update: (id, p) => set((s) => ({ items: s.items.map((x) => (x.id === id ? { ...x, ...p } : x)) })),
-      remove: (id) => set((s) => ({ items: s.items.filter((x) => x.id !== id) })),
-      addHook: (h) => set((s) => ({ hooks: [...s.hooks, { ...h, id: 'h' + uid(6) }] })),
-      updateHook: (id, p) => set((s) => ({ hooks: s.hooks.map((x) => (x.id === id ? { ...x, ...p } : x)) })),
-      removeHook: (id) => set((s) => ({ hooks: s.hooks.filter((x) => x.id !== id) })),
-    }),
-    { name: 'ai_integ_v1', storage: persistStorage, version: 1 },
-  ),
-);
 
 /* ---------- المهام المجدولة ---------- */
 export interface TaskRun { ts: number; ok: boolean; text: string }
@@ -143,45 +110,6 @@ export const useResearch = create<ResState>()(
   ),
 );
 
-/* ---------- البريد ---------- */
-interface MailState {
-  accounts: MailAccount[];
-  activeId: string | null;
-  folder: string;
-  contacts: string[];
-  cache: Record<string, MailHead[]>;
-  addAccount: (a: Omit<MailAccount, 'id'>) => string;
-  updateAccount: (id: string, p: Partial<MailAccount>) => void;
-  removeAccount: (id: string) => void;
-  setActive: (id: string) => void;
-  setFolder: (f: string) => void;
-  setCache: (key: string, list: MailHead[]) => void;
-  addContacts: (c: string[]) => void;
-}
-export const useMail = create<MailState>()(
-  persist(
-    (set) => ({
-      accounts: [],
-      activeId: null,
-      folder: 'INBOX',
-      contacts: [],
-      cache: {},
-      addAccount: (a) => {
-        const id = 'm' + uid(6);
-        set((s) => ({ accounts: [...s.accounts, { ...a, id }], activeId: s.activeId ?? id }));
-        return id;
-      },
-      updateAccount: (id, p) => set((s) => ({ accounts: s.accounts.map((x) => (x.id === id ? { ...x, ...p } : x)) })),
-      removeAccount: (id) => set((s) => ({ accounts: s.accounts.filter((x) => x.id !== id), activeId: s.activeId === id ? s.accounts.find((x) => x.id !== id)?.id ?? null : s.activeId })),
-      setActive: (id) => set({ activeId: id }),
-      setFolder: (f) => set({ folder: f }),
-      setCache: (key, list) => set((s) => ({ cache: { ...s.cache, [key]: list.slice(0, 60) } })),
-      addContacts: (c) => set((s) => ({ contacts: Array.from(new Set([...c, ...s.contacts])).slice(0, 300) })),
-    }),
-    { name: 'ai_mail_v1', storage: persistStorage, version: 1 },
-  ),
-);
-
 /* ---------- حوارات عامة (موافقات الوكيل وأسئلته) ---------- */
 export interface DialogReq {
   id: string;
@@ -205,3 +133,20 @@ export const useDialogs = create<DlgState>((set) => ({
   pop: (id) => set((s) => ({ queue: s.queue.filter((x) => x.id !== id) })),
 }));
 export const confirmAsk = (title: string, message?: string, o: Partial<DialogReq> = {}) => useDialogs.getState().push({ title, message, ...o }).then((r) => r.ok);
+
+/* ---------- أسئلة الوكيل متعددة الخيارات ---------- */
+export interface AskOpt { label: string; description?: string }
+export interface AskQ { question: string; multi?: boolean; options: AskOpt[] }
+/** إجابة سؤال: null = تخطّاه المستخدم */
+export type AskAns = string[] | null;
+export interface AskReq { id: string; questions: AskQ[]; resolve: (a: AskAns[] | null) => void }
+interface AskState {
+  queue: AskReq[];
+  push: (questions: AskQ[]) => Promise<AskAns[] | null>;
+  pop: (id: string) => void;
+}
+export const useAsk = create<AskState>((set) => ({
+  queue: [],
+  push: (questions) => new Promise((resolve) => set((s) => ({ queue: [...s.queue, { id: uid(6), questions, resolve }] }))),
+  pop: (id) => set((s) => ({ queue: s.queue.filter((x) => x.id !== id) })),
+}));

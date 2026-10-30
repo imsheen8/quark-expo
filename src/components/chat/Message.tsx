@@ -8,7 +8,7 @@ import { toast } from '../../store/data';
 import { useColors } from '../../theme';
 import { Icon, IconButton, T, haptic } from '../ui/kit';
 import { Markdown } from './Markdown';
-import { AgentSteps, CompareView, SourceChips } from './Extras';
+import { AgentFlow, CompareView, SourceChips } from './Extras';
 import { ResearchCard } from './ResearchCard';
 
 export function Thinking({ text, secs, live }: { text: string; secs: number; live?: boolean }) {
@@ -115,7 +115,6 @@ export function MessageView({ msg, isLast, onRegenerate, onEdit, onDelete, onIma
   return (
     <View style={{ paddingHorizontal: 16, gap: 8 }}>
       {msg.task ? <T size={12} color="accent">⏰ مهمة مجدولة: {msg.task}</T> : null}
-      {msg.steps?.length ? <AgentSteps steps={msg.steps} /> : null}
       {msg.thinking ? <Thinking text={msg.thinking} secs={msg.thinkSecs ?? 0} /> : null}
       {msg.alt ? <CompareView msg={msg} /> : null}
       {msg.error ? (
@@ -123,8 +122,10 @@ export function MessageView({ msg, isLast, onRegenerate, onEdit, onDelete, onIma
           <Icon name="alert-circle" size={18} color={c.danger} />
           <T size={14} color="danger" selectable style={{ flex: 1 }}>{msg.content}</T>
         </View>
-      ) : msg.alt ? null : (
-        <Markdown text={msg.content.replace(/```api_call[\s\S]*?```/g, '')} />
+      ) : msg.alt ? null : msg.steps?.length ? (
+        <AgentFlow text={msg.content} steps={msg.steps} />
+      ) : (
+        <Markdown text={msg.content} />
       )}
       {msg.sources?.length ? <SourceChips sources={msg.sources} /> : null}
       {msg.skills?.length ? <T size={12} color="muted">✦ مهارات: {msg.skills.join('، ')}</T> : null}

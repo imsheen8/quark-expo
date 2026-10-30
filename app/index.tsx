@@ -10,7 +10,7 @@ import type { Msg } from '../src/api/types';
 import { ChatActions } from '../src/components/ChatActions';
 import { Composer, type ComposerValue } from '../src/components/chat/Composer';
 import { MessageView, Thinking, Typing } from '../src/components/chat/Message';
-import { AgentSteps } from '../src/components/chat/Extras';
+import { AgentFlow } from '../src/components/chat/Extras';
 import { Markdown } from '../src/components/chat/Markdown';
 import { ModelPicker } from '../src/components/chat/ModelPicker';
 import { Button, Header, Icon, IconButton, T, haptic } from '../src/components/ui/kit';
@@ -133,9 +133,8 @@ export default function ChatScreen() {
               item.id === '__live' ? (
                 <View style={{ paddingHorizontal: 16, gap: 8 }}>
                   {stream.status ? <T size={12.5} color="accent">{stream.status}</T> : null}
-                  {stream.steps.length ? <AgentSteps steps={stream.steps} live /> : null}
                   {stream.think ? <Thinking text={stream.think} secs={stream.secs} live={!stream.text} /> : null}
-                  {stream.text ? <Markdown text={stream.text} /> : !stream.think ? <Typing /> : null}
+                  {stream.steps.length ? <AgentFlow text={stream.text} steps={stream.steps} /> : stream.text ? <Markdown text={stream.text} /> : !stream.think ? <Typing /> : null}
                 </View>
               ) : (
                 <MessageView

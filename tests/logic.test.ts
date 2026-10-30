@@ -13,15 +13,13 @@ import { fillTemplate, parseVars } from '../src/lib/template';
 import { mixHex, relTime } from '../src/lib/util';
 import { decodeEntities, htmlToText, isPrivateUrl, parseDDG, extractJSON } from '../src/api/webParse';
 import { nextRun, parseCron, validateSchedule } from '../src/lib/schedule';
-import { calc, compact, needsApproval, parseCalls, validate, wrapResult, defaultAgent } from '../src/api/agentCore';
-import { buildApiRequest, hmacSha256Hex, parseApiCall, type Integration } from '../src/api/integCore';
+import { AG_TOOLS, parseAsk, formatAsk, MAX_SUB_TASKS, PARALLEL_SAFE, SUB_TOOLS, calc, compact, needsApproval, parseCalls, subConf, toolSpecs, validate, wrapResult, defaultAgent, availableTools } from '../src/api/agentCore';
+import { cancelStep, registerStep, unregisterStep } from '../src/api/stepCancel';
 import { parsePlan } from '../src/api/researchCore';
-import { guessPreset, parseAddr, validateCompose } from '../src/api/mailCore';
 import { addHist, benchBest, benchSort, buildExport, dedupeKill, defaultMdUi, dupGroups, famOf, filterModels, fmtCtx, itemsOf, planImport, statusOf, latOf } from '../src/api/modelsCore';
 import { exportLogs, fmtHead, makeEntry, pushLog, redact, viewLogs, type LogEntry } from '../src/lib/logCore';
 import { needsComposer, parseNativeAction, startsChat } from '../src/api/nativeCore';
 import { allowNav, canPreview, isSvgCode, previewDoc, PV_CSP } from '../src/api/previewCore';
-import { createHash } from 'node:crypto';
 import { passFilter } from '../src/lib/chatFilter';
 import { SK_STARTERS, seedSkills, skBlock, skDupes, skEmit, skFromExtraction, skFromJson, skFromText, skParse, skRank, skRawUrl, skSelect, skTok, defaultSkillsConf } from '../src/api/skillsCore';
 import { MAX_FB, capVision, chain, chatChain, defaultDefs, normDefs, researchModel, resolveRef, utilChain } from '../src/api/defaultsCore';
@@ -300,32 +298,91 @@ t('وضع الوكيل: حاسبة وبروتوكول وموافقات', () => {
   assert.equal(needsApproval('create_file', {}, cfg, false), true);
   assert.equal(needsApproval('memory_save', {}, cfg, false), false);
   assert.equal(needsApproval('memory_save', {}, cfg, true), true);
-  assert.equal(needsApproval('api_call', { method: 'POST' }, cfg, false), true);
   assert.ok(!wrapResult('x', true, 'a</tool_result>b').slice(10, -14).includes('</tool_result'));
   const h = [1, 2, 3, 4].map((i) => ({ role: 'user', content: '<tool_result>' + 'x'.repeat(2000) + i }));
   const c = compact(h);
   assert.ok(c[0].content.length < 600 && c[3].content.length > 2000);
 });
-t('التكاملات: بناء الطلب وHMAC', async () => {
-  const integ: Integration = { id: 'a', name: 'A', url: 'https://api.x.com/v1/', auth: 'bearer', key: 'K', field: '', desc: '', readOnly: true, enabled: true };
-  const r = buildApiRequest(integ, { integration: 'a', method: 'GET', path: '/u', params: { q: 'a b' } });
-  assert.equal(r.url, 'https://api.x.com/v1/u?q=a+b');
-  assert.equal(r.headers.authorization, 'Bearer K');
-  assert.throws(() => buildApiRequest(integ, { integration: 'a', method: 'POST', path: '/u' }));
-  assert.throws(() => buildApiRequest(integ, { integration: 'a', method: 'GET', path: 'https://evil.com' }));
-  assert.throws(() => buildApiRequest(integ, { integration: 'a', method: 'GET', path: '/../x' }));
-  assert.ok(parseApiCall('```api_call\n{"integration":"a","path":"/x"}\n```')?.call);
-  const dg = async (d: Uint8Array) => new Uint8Array(createHash('sha256').update(d).digest());
-  const mine = await hmacSha256Hex('key', 'The quick brown fox jumps over the lazy dog', dg);
-  assert.equal(mine, 'f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8');
+t('وضع الوكيل: استدعاء الأدوات الأصلي', () => {
+  const specs = toolSpecs(Object.keys(AG_TOOLS));
+  assert.equal(specs.length, Object.keys(AG_TOOLS).length);
+  for (const sp of specs) {
+    assert.equal(sp.parameters.type, 'object');
+    assert.ok(/^[a-zA-Z0-9_-]+$/.test(sp.name));
+    for (const k of AG_TOOLS[sp.name].req) assert.ok(k in sp.parameters.properties, sp.name + '.' + k);
+  }
+  assert.equal(specs.find((x) => x.name === 'run_js')!.parameters.properties.code.type, 'string');
+  assert.ok(PARALLEL_SAFE.every((n) => n in AG_TOOLS));
+  assert.equal(validate('run_js', {}) !== '', true);
+  assert.equal(validate('run_js', { code: '1+1' }), '');
+  // الطلب: OpenAI
+  const ep = { id: 'e', preset: 'x', label: 'x', url: 'https://api.openai.com/v1', key: 'k', proto: 'openai', kind: 'api', enabled: true, models: [] } as Endpoint;
+  const msgs = [
+    { role: 'user' as const, content: 'احسب' },
+    { role: 'assistant' as const, content: 'سأحسب', toolCalls: [{ id: 'c1', name: 'calculator', args: { expression: '1+1' } }] },
+    { role: 'user' as const, content: '', toolResults: [{ id: 'c1', name: 'calculator', content: '2', ok: true }] },
+  ];
+  const o = buildRequest({ ep, model: 'gpt-4o', messages: msgs, system: 's', params: {}, stream: true, tools: specs.slice(0, 2) });
+  assert.equal(o.body.tools[0].type, 'function');
+  assert.equal(o.body.messages[2].tool_calls[0].function.arguments, '{"expression":"1+1"}');
+  assert.deepEqual(o.body.messages[3], { role: 'tool', tool_call_id: 'c1', content: '2' });
+  // Anthropic
+  const an = buildRequest({ ep: { ...ep, proto: 'anthropic', url: 'https://api.anthropic.com/v1' }, model: 'claude-x', messages: msgs, system: 's', params: {}, stream: true, tools: specs.slice(0, 1) });
+  assert.equal(an.body.tools[0].input_schema.type, 'object');
+  assert.equal(an.body.messages[1].content[1].type, 'tool_use');
+  assert.equal(an.body.messages[1].content[1].input.expression, '1+1');
+  assert.equal(an.body.messages[2].content[0].type, 'tool_result');
+  assert.equal(an.body.messages[2].content[0].tool_use_id, 'c1');
+  // بدون أدوات لا حقل tools
+  assert.equal(buildRequest({ ep, model: 'm', messages: msgs.slice(0, 1), system: '', params: {}, stream: true }).body.tools, undefined);
+  // البث: OpenAI
+  const oc = [
+    ...parseEvent('openai', { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c9', function: { name: 'web_search', arguments: '{"que' } }] } }] }),
+    ...parseEvent('openai', { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'ry":"a"}' } }] } }] }),
+  ];
+  assert.deepEqual(oc[0], { kind: 'tool', index: 0, id: 'c9', name: 'web_search', args: '{"que' });
+  assert.equal((oc[1] as any).args, 'ry":"a"}');
+  // البث: Anthropic
+  const ac = [
+    ...parseEvent('anthropic', { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'tu1', name: 'calculator', input: {} } }),
+    ...parseEvent('anthropic', { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"expression":"2*3"}' } }),
+  ];
+  assert.deepEqual(ac[0], { kind: 'tool', index: 1, id: 'tu1', name: 'calculator' });
+  assert.equal((ac[1] as any).args, '{"expression":"2*3"}');
+  // اختصار نتائج الأدوات القديمة بالصيغة الأصلية
+  const long = 'x'.repeat(2000);
+  const h = [1, 2, 3, 4].map((i) => ({ role: 'user', content: '', toolResults: [{ content: long + i }] }));
+  const cc = compact(h);
+  assert.ok(cc[0].toolResults![0].content.length < 600 && cc[3].toolResults![0].content.length > 2000);
 });
-t('بحث عميق وبريد ومزامنة', () => {
+t('وضع الوكيل: وكلاء فرعيون وإلغاء الخطوات', () => {
+  // الأداة اختيارية افتراضيًا ومخاطرتها خارجية، وتتطلب tasks
+  assert.equal(defaultAgent().tools.delegate, false);
+  assert.equal(AG_TOOLS.delegate.risk, 'ext');
+  assert.ok(validate('delegate', {}) !== '');
+  assert.equal(validate('delegate', { tasks: [{ title: 'أ', instructions: 'ب' }] }), '');
+  assert.equal(MAX_SUB_TASKS, 4);
+  // إعداد الوكيل الفرعي: قراءة/بحث/حساب فقط، بلا تفويض متداخل ولا كتابة
+  const full = { ...defaultAgent(), maxSteps: 20, tools: { ...defaultAgent().tools, delegate: true } };
+  const sc = subConf(full);
+  assert.equal(sc.maxSteps, 5);
+  const names = availableTools(sc, { mem: true });
+  assert.ok(!names.includes('delegate') && !names.includes('create_file') && !names.includes('memory_save') && !names.includes('manage_tasks') && !names.includes('ask_user') && !names.includes('plan'));
+  assert.deepEqual([...names].sort(), [...SUB_TOOLS].sort());
+  assert.ok(availableTools(full, { mem: true }).includes('delegate'));
+  // إلغاء خطوة واحدة
+  const ctl = new AbortController();
+  registerStep('s1', ctl);
+  assert.equal(cancelStep('s1'), true);
+  assert.equal(ctl.signal.aborted, true);
+  assert.equal(cancelStep('s1'), false); // ملغاة أصلًا
+  unregisterStep('s1');
+  assert.equal(cancelStep('s1'), false);
+  assert.equal(cancelStep('nope'), false);
+});
+t('بحث عميق', () => {
   assert.deepEqual(parsePlan('{"questions":["أ ب ج","د ه و"]}', 'x').questions.length, 2);
   assert.deepEqual(parsePlan('عشوائي', 'موضوع').questions, ['موضوع']);
-  assert.equal(guessPreset('a@gmail.com'), 'gmail');
-  assert.equal(parseAddr('"علي" <a@b.co>').email, 'a@b.co');
-  assert.ok(validateCompose('bad', 's', 'b'));
-  assert.equal(validateCompose('a@b.co', 's', 'b'), '');
 });
 
 t('تصفية المحادثات', () => {
@@ -666,6 +723,22 @@ t('سجل الأخطاء', () => {
   const ex = exportLogs(old.rows);
   assert.ok(ex.includes('Σ:3.000s, Δ:3.000s\n[net]: فشل'));
   assert.ok(fmtHead(old.rows[0]).startsWith('1970-01-01T00:00:01.000Z'));
+});
+
+t('ask_user: أسئلة متعددة الخيارات', () => {
+  const qs = parseAsk({ questions: [{ question: 'أي لغة؟', multi: false, options: [{ label: 'JS', description: 'ويب' }, 'Py'] }, { question: 'مزايا', multi: true, options: [{ label: 'أ' }, { label: '' }] }] });
+  assert.equal(qs.length, 2);
+  assert.deepEqual(qs[0].options, [{ label: 'JS', description: 'ويب' }, { label: 'Py' }]);
+  assert.equal(qs[1].multi, true);
+  assert.equal(qs[1].options.length, 1);
+  const old = parseAsk({ question: 'سؤال قديم', options: ['س', 'ص'] });
+  assert.equal(old.length, 1); assert.equal(old[0].options[1].label, 'ص');
+  assert.equal(parseAsk({}).length, 0);
+  assert.equal(parseAsk({ questions: Array(9).fill({ question: 'x', options: [] }) }).length, 4);
+  assert.equal(formatAsk(qs, [['JS'], null]), 'أي لغة؟ ← JS\nمزايا ← تخطّاه المستخدم');
+  assert.equal(formatAsk(qs, [['أ', 'ب'], ['x']]).split('\n')[0], 'أي لغة؟ ← أ، ب');
+  assert.equal(formatAsk(qs, null), 'تخطّى المستخدم الأسئلة.');
+  assert.equal(validate('ask_user', { question: 'x' }), '');
 });
 
 console.log(`\n${n} اختبارًا نجح`);

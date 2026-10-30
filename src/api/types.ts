@@ -81,9 +81,11 @@ export interface AgentStep {
   id: string;
   tool: string;
   args: Record<string, any>;
-  status: 'run' | 'ok' | 'error' | 'denied';
+  status: 'run' | 'ok' | 'error' | 'denied' | 'cancelled';
   result?: string;
   ts: number;
+  /** موضع الخطوة داخل نص الرد (عدد الأحرف قبلها) لعرض النص والخطوات متداخلة */
+  at?: number;
 }
 
 export interface Chat {
@@ -106,12 +108,23 @@ export interface WireMsg {
   role: 'user' | 'assistant';
   content: string;
   images?: { mime: string; data: string }[];
+  /** استدعاءات أدوات أصلية أصدرها المساعد (وضع الوكيل مع OpenAI/Anthropic) */
+  toolCalls?: ToolCall[];
+  /** نتائج الأدوات المقابلة (رسالة بدور user، وتُرسل كرسائل tool عند OpenAI) */
+  toolResults?: ToolResult[];
 }
+
+export interface ToolCall { id: string; name: string; args: Record<string, any>; err?: string }
+export interface ToolResult { id: string; name: string; content: string; ok: boolean }
+/** وصف أداة بصيغة JSON Schema لاستدعاء الأدوات الأصلي */
+export interface ToolSpec { name: string; description: string; parameters: Record<string, any> }
 
 export type Chunk =
   | { kind: 'text'; text: string }
   | { kind: 'think'; text: string }
-  | { kind: 'usage'; usage: Partial<Usage> };
+  | { kind: 'usage'; usage: Partial<Usage> }
+  /** جزء من استدعاء أداة أصلي (يتجمّع عبر index) */
+  | { kind: 'tool'; index: number; id?: string; name?: string; args?: string };
 
 export interface LibItem {
   id: string;

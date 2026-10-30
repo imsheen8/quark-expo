@@ -25,8 +25,6 @@ export default function SettingsHome() {
       <Group title="الأدوات الذكية">
         <Row icon="search" title="البحث" sub="بحث الويب والبحث العميق" onPress={() => r.push('/settings/web')} />
         <Row icon="tool" title="وضع الوكيل" sub="الأدوات والموافقات" onPress={() => r.push('/settings/agent')} />
-        <Row icon="link" title="التكاملات" sub="خدمات REST وWebhooks" onPress={() => r.push('/settings/integrations')} />
-        <Row icon="mail" title="البريد" sub="البوابة والحسابات" onPress={() => r.push('/settings/mail')} />
       </Group>
       <Group title="التخصيص">
         <Row icon="sliders" title="التخصيص" sub="التعليمات · معاملات التوليد" onPress={() => r.push('/settings/personalize')} />

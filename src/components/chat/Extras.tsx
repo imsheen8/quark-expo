@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Linking, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { AG_TOOLS } from '../../api/agentCore';
+import { cancelStep } from '../../api/stepCancel';
 import type { AgentStep, Msg } from '../../api/types';
 import { shortModel } from '../../lib/util';
 import { useDialogs } from '../../store/features';
 import { useSettings } from '../../store/settings';
 import { useColors } from '../../theme';
-import { Dialog, Icon, Sheet, T, Row, Group, haptic } from '../ui/kit';
+import { FONT } from '../../theme/themes';
+import { Dialog, Icon, IconButton, Sheet, T, Row, Group, haptic, type IconName } from '../ui/kit';
 import { Markdown } from './Markdown';
 
 export function SourceChips({ sources }: { sources: NonNullable<Msg['sources']> }) {
@@ -26,40 +28,99 @@ export function SourceChips({ sources }: { sources: NonNullable<Msg['sources']> 
   );
 }
 
-const ICON = { run: 'loader', ok: 'check-circle', error: 'alert-circle', denied: 'slash' } as const;
+const TOOL_ICON: Record<string, IconName> = {
+  web_search: 'search', read_url: 'globe', calculator: 'hash', now: 'clock', memory_search: 'database', memory_save: 'save',
+  search_chats: 'message-circle', read_chat: 'message-square', ask_user: 'help-circle', manage_tasks: 'check-square', create_file: 'file-plus', run_js: 'terminal', delegate: 'users',
+};
+const summ = (s: AgentStep) => {
+  const v = s.args.query ?? s.args.url ?? s.args.expression ?? s.args.code ?? s.args.path ?? s.args.action ?? s.args.filename ?? s.args.question ?? s.args.text ?? s.args.content;
+  if (v != null && typeof v !== 'object') return String(v).replace(/\s+/g, ' ').slice(0, 160);
+  const j = JSON.stringify(s.args ?? {});
+  return j === '{}' ? '' : j.slice(0, 160);
+};
 
-export function AgentSteps({ steps, live }: { steps: AgentStep[]; live?: boolean }) {
+/** خطوات الوكيل كخط زمني: مربع أيقونة لكل أداة، وخط عمودي يصل الخطوات، والتفاصيل بخط ثابت العرض */
+export function AgentSteps({ steps }: { steps: AgentStep[]; live?: boolean }) {
   const c = useColors();
   const [open, setOpen] = useState<string | null>(null);
   const plan = [...steps].reverse().find((s) => s.tool === 'plan');
   const rest = steps.filter((s) => s.tool !== 'plan');
+
+  const Line = () => <View style={{ flex: 1, width: 1.5, backgroundColor: c.border, marginTop: 4 }} />;
+  const Dot = () => <View style={{ width: 32, height: 24, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.muted }} /></View>;
+
+  type TRow = { key: string; node: React.ReactNode };
+  const rows: TRow[] = [];
+  if (plan && Array.isArray(plan.args.items)) {
+    rows.push({
+      key: 'plan',
+      node: (
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={{ alignItems: 'center' }}><Dot />{rest.length ? <Line /> : null}</View>
+          <View style={{ flex: 1, gap: 2, paddingBottom: rest.length ? 14 : 0 }}>
+            {plan.args.items.map((it: any, i: number) => (
+              <T key={i} size={13.5} color={it.done ? 'muted' : 'text2'} style={{ textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.done ? '✓ ' : '○ '}{it.t}</T>
+            ))}
+          </View>
+        </View>
+      ),
+    });
+  }
+  rest.forEach((st, i) => {
+    const last = i === rest.length - 1;
+    const err = st.status === 'error' || st.status === 'denied';
+    const icon: IconName = st.status === 'denied' || st.status === 'cancelled' ? 'slash' : err ? 'alert-circle' : TOOL_ICON[st.tool] ?? 'terminal';
+    const tint = err ? c.danger : st.status === 'run' ? c.accent : c.text2;
+    const detail = summ(st);
+    const isOpen = open === st.id;
+    rows.push({
+      key: st.id,
+      node: (
+        <Pressable onPress={() => { haptic(); setOpen(isOpen ? null : st.id); }} style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={{ alignItems: 'center' }}>
+            <View style={{ width: 32, height: 32, borderRadius: 10, borderWidth: 1, borderColor: err ? c.danger : c.border, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center' }}>
+              {st.status === 'run' ? <ActivityIndicator size="small" color={c.accent} /> : <Icon name={icon} size={16} color={tint} />}
+            </View>
+            {!last ? <Line /> : null}
+          </View>
+          <View style={{ flex: 1, gap: 3, paddingBottom: last ? 0 : 14, minWidth: 0 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <T size={15} weight="semibold" color={err ? 'danger' : st.status === 'cancelled' ? 'muted' : 'text'} numberOfLines={1} style={{ flex: 1 }}>{AG_TOOLS[st.tool]?.label ?? st.tool}{st.status === 'cancelled' ? ' · أُلغيت' : ''}</T>
+              {st.status === 'run' ? <IconButton name="x-circle" size={18} label="إلغاء هذه الخطوة" color={c.muted} onPress={() => { haptic(); cancelStep(st.id); }} style={{ width: 30, height: 30 }} /> : null}
+            </View>
+            {detail ? <T size={12.5} color="muted" ltr numberOfLines={isOpen ? undefined : 2} style={{ fontFamily: FONT.mono }}>{detail}</T> : null}
+            {st.status === 'run' && st.result ? <T size={12} color="text2" ltr numberOfLines={8} style={{ fontFamily: FONT.mono, marginTop: 2 }}>{st.result}</T> : null}
+            {isOpen && st.status !== 'run' && st.result ? <T size={12} color="text2" selectable ltr style={{ fontFamily: FONT.mono, marginTop: 4 }}>{st.result}</T> : null}
+          </View>
+        </Pressable>
+      ),
+    });
+  });
+  return <View>{rows.map((r) => <View key={r.key}>{r.node}</View>)}</View>;
+}
+
+/** يعرض نص الرد والخطوات متداخلة بترتيب حدوثها: نص ← خطوات ← نص ← خطوات … (الخطوات القديمة بلا موضع تُعرض في الأعلى) */
+export function AgentFlow({ text, steps }: { text: string; steps: AgentStep[] }) {
+  const parts: ({ k: 't'; v: string } | { k: 's'; v: AgentStep[] })[] = [];
+  let pos = 0;
+  for (const st of steps) {
+    const at = Math.min(text.length, Math.max(pos, st.at ?? 0));
+    if (at > pos) {
+      const seg = text.slice(pos, at).trim();
+      if (seg) parts.push({ k: 't', v: seg });
+      pos = at;
+    }
+    const lastP = parts[parts.length - 1];
+    if (lastP && lastP.k === 's') lastP.v.push(st); else parts.push({ k: 's', v: [st] });
+  }
+  const tail = text.slice(pos).trim();
+  if (tail) parts.push({ k: 't', v: tail });
   return (
-    <View style={{ backgroundColor: c.surface, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 10, gap: 6 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Icon name="tool" size={15} color={c.accent} />
-        <T size={13} weight="medium" color="text2">{live ? 'الوكيل يعمل…' : `خطوات الوكيل (${rest.length})`}</T>
-      </View>
-      {plan && Array.isArray(plan.args.items) ? (
-        <View style={{ gap: 2, paddingBottom: 4 }}>
-          {plan.args.items.map((it: any, i: number) => (
-            <T key={i} size={12.5} color={it.done ? 'muted' : 'text'} style={{ textDecorationLine: it.done ? 'line-through' : 'none' }}>{it.done ? '✓ ' : '○ '}{it.t}</T>
-          ))}
-        </View>
-      ) : null}
-      {rest.map((s) => (
-        <View key={s.id}>
-          <Pressable onPress={() => { haptic(); setOpen(open === s.id ? null : s.id); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
-            <Icon name={ICON[s.status]} size={14} color={s.status === 'ok' ? c.accent : s.status === 'run' ? c.muted : c.danger} />
-            <T size={12.5} weight="medium" style={{ flex: 1 }} numberOfLines={1}>{AG_TOOLS[s.tool]?.label ?? s.tool}{summ(s) ? ' · ' + summ(s) : ''}</T>
-            <Icon name={open === s.id ? 'chevron-up' : 'chevron-down'} size={14} color={c.muted} />
-          </Pressable>
-          {open === s.id ? <T size={12} color="muted" selectable ltr style={{ paddingStart: 22, paddingBottom: 6 }}>{s.result || JSON.stringify(s.args)}</T> : null}
-        </View>
-      ))}
+    <View style={{ gap: 10 }}>
+      {parts.map((p, i) => (p.k === 't' ? <Markdown key={i} text={p.v} /> : <AgentSteps key={i} steps={p.v} />))}
     </View>
   );
 }
-const summ = (s: AgentStep) => String(s.args.query ?? s.args.url ?? s.args.expression ?? s.args.path ?? s.args.action ?? s.args.filename ?? '').slice(0, 40);
 
 /** مقارنة رد النموذج الأساسي بالثاني */
 export function CompareView({ msg }: { msg: Msg }) {
@@ -75,7 +136,7 @@ export function CompareView({ msg }: { msg: Msg }) {
           </Pressable>
         ))}
       </View>
-      {tab === 'a' ? <Markdown text={msg.content.replace(/```api_call[\s\S]*?```/g, '')} /> : (msg.alt.error ? <T size={14} color="danger" selectable>{msg.alt.content}</T> : <Markdown text={msg.alt.content} />)}
+      {tab === 'a' ? <Markdown text={msg.content} /> : (msg.alt.error ? <T size={14} color="danger" selectable>{msg.alt.content}</T> : <Markdown text={msg.alt.content} />)}
     </View>
   );
 }

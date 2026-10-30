@@ -42,8 +42,6 @@ export interface SettingsState {
   /** إعدادات البحث العميق */
   deep: { questions: number; pages: number };
   agent: AgentConf;
-  /** بوابة بايثون للبريد */
-  gw: { url: string; token: string };
   /** أوضاع المحادثة الحالية */
   modes: { web: boolean; agent: boolean; research: boolean; compare: boolean };
   /** النموذج الثاني للمقارنة */
@@ -92,7 +90,6 @@ export const useSettings = create<SettingsState>()(
       search: DEFAULT_SEARCH,
       deep: { questions: 4, pages: 3 },
       agent: defaultAgent(),
-      gw: { url: '', token: '' },
       modes: { web: false, agent: false, research: false, compare: false },
       cmpSel: null,
       chatFilter: 'recent',
@@ -178,7 +175,6 @@ export const useSettings = create<SettingsState>()(
         search: { ...cur.search, ...(saved?.search || {}) },
         deep: { ...cur.deep, ...(saved?.deep || {}) },
         agent: { ...cur.agent, ...(saved?.agent || {}), tools: { ...cur.agent.tools, ...(saved?.agent?.tools || {}) } },
-        gw: { ...cur.gw, ...(saved?.gw || {}) },
         modes: { ...cur.modes, ...(saved?.modes || {}) },
         skills: { ...cur.skills, ...(saved?.skills || {}) },
         defs: normDefs(saved?.defs),

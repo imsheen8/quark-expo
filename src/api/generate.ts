@@ -10,10 +10,7 @@ import { buildHistory } from './history';
 import { mergeUsage, splitThink } from './parsers';
 import { completeOnce } from './stream';
 import { applyDefaultChatModel, chatModels, completeChain, streamChain, utilModels } from './chains';
-import { agentLoop, fireTaskEvent, fireWebhooks, needsResearch, runApiCall, searchForChat, startChatResearch, streamTurn } from './engines';
-import { wrapResult } from './agentCore';
-import { integPrompt, parseApiCall } from './integCore';
-import { useInteg } from '../store/features';
+import { agentLoop, fireTaskEvent, needsResearch, searchForChat, startChatResearch } from './engines';
 import type { AgentStep, Chat, FileRef, ImageRef, Msg, Params, Usage } from './types';
 import { logErr } from '../store/logs';
 
@@ -100,9 +97,8 @@ export async function sendMessage(o: Outgoing): Promise<void> {
   const msg: Msg = { id: uid(), role: 'user', content: text, ts: Date.now(), ...(o.imgs?.length ? { imgs: o.imgs } : {}), ...(o.files?.length ? { files: o.files } : {}), ...(o.branch ? { vers: o.branch.vers, vi: o.branch.vi } : {}) };
   const isNew = chat.messages.length === 0;
   st.addMessage(chat.id, msg);
-  if (isNew) { fireTaskEvent('newchat'); void fireWebhooks('session.created', { chatId: chat.id }); }
+  if (isNew) fireTaskEvent('newchat');
   fireTaskEvent('messages');
-  void fireWebhooks('chat.message', { chatId: chat.id, text });
   // وضع البحث العميق: النموذج يقرّر هل الرسالة تحتاج بحثًا أم ردًّا عاديًا
   if (useSettings.getState().modes.research && text && !o.imgs?.length && !o.files?.length) {
     const sv = useStream.getState();
@@ -180,7 +176,6 @@ export async function generateReply(chatId: string): Promise<void> {
     const params = resolveParams(chat, am);
     const thinking = useSettings.getState().thinking;
     const S = useSettings.getState();
-    const integOn = useInteg.getState().items.some((i) => i.enabled);
 
     if (S.modes.agent) {
       useStream.getState().set({ status: 'وضع الوكيل' });
@@ -203,7 +198,6 @@ export async function generateReply(chatId: string): Promise<void> {
         }
         useStream.getState().set({ status: '' });
       }
-      if (integOn) system += '\n\n' + integPrompt(useInteg.getState().items);
       const cmp = S.modes.compare && S.cmpSel ? S.endpoints.find((e) => e.id === S.cmpSel!.ep) : null;
       if (cmp && S.cmpSel) {
         altP = completeOnce({ ep: cmp, model: S.cmpSel.model, messages: history, system, params, signal })
@@ -215,15 +209,6 @@ export async function generateReply(chatId: string): Promise<void> {
         else if (ch.kind === 'think') reason += ch.text;
         else usage = mergeUsage(usage as Usage, ch.usage);
         if (!timer) timer = setTimeout(paint, 60);
-      }
-      const pc = integOn ? parseApiCall(splitThink(full).ans) : null;
-      if (pc) {
-        let res: string;
-        try { res = pc.call ? await runApiCall(pc.call, signal, true) : pc.error || 'خطأ'; } catch (e) { if (signal.aborted) throw e; res = 'خطأ: ' + (e instanceof Error ? e.message : String(e)); }
-        steps.push({ id: uid(5), tool: 'api_call', args: (pc.call as any) || {}, status: pc.call ? 'ok' : 'error', result: res.slice(0, 1500), ts: Date.now() });
-        useStream.getState().set({ steps: [...steps] });
-        const r2 = await streamTurn(used, [...history, { role: 'assistant', content: splitThink(full).ans }, { role: 'user', content: wrapResult('api_call', !!pc.call, res) }], system, signal);
-        full = r2.text; reason = r2.think || reason; usage = mergeUsage(usage as Usage, r2.usage);
       }
     }
     if (!full && !reason) throw new Error('لم يصل أي رد من النموذج. تأكد من صحة معرّف النموذج.');
@@ -267,7 +252,6 @@ export async function generateReply(chatId: string): Promise<void> {
   }
   useStream.getState().reset();
   controller = null;
-  if (!errMsg) void fireWebhooks('chat.completed', { chatId, text: v.ans });
 
   const c2 = useChats.getState().chats.find((c) => c.id === chatId);
   if (c2 && !errMsg && useSettings.getState().autoTitle && c2.autoTitle && !c2.temp && c2.messages.filter((m) => m.role === 'assistant').length === 1) {

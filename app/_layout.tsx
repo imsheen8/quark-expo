@@ -11,9 +11,11 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, I18nManager, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GlobalDialogs } from '../src/components/chat/Extras';
+import { AskSheet } from '../src/components/chat/AskSheet';
 import { runDueTasks, syncTaskNotifications } from '../src/api/engines';
 import { registerBackground } from '../src/api/background';
 import { Intro } from '../src/components/Intro';
+import { JsSandbox } from '../src/components/JsSandbox';
 import { LockScreen } from '../src/components/LockScreen';
 import { Sidebar } from '../src/components/Sidebar';
 import { RTL, Toast } from '../src/components/ui/kit';
@@ -82,6 +84,8 @@ function Shell() {
       <Sidebar />
       <Toast />
       <GlobalDialogs />
+      <AskSheet />
+      <JsSandbox />
       {locked ? <LockScreen /> : null}
       {intro && !locked ? <Intro onDone={() => setIntro(false)} /> : null}
     </RTL>

@@ -9,7 +9,7 @@ export interface Preset {
   link?: string;
 }
 
-/** نقاط الاتصال الجاهزة (مطابقة لما في النسخة الأصلية). على الهاتف لا توجد قيود CORS فلا حاجة لبوابة وسيطة. */
+/** نقاط الاتصال الجاهزة (مطابقة لما في النسخة الأصلية). على الهاتف لا توجد قيود CORS. */
 export const PRESETS: Record<string, Preset> = {
   openrouter: { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', proto: 'openai', kind: 'api', help: 'احصل على مفتاح من', link: 'https://openrouter.ai/keys' },
   openai: { label: 'OpenAI', url: 'https://api.openai.com/v1', proto: 'openai', kind: 'api', help: 'مفتاح من', link: 'https://platform.openai.com/api-keys' },

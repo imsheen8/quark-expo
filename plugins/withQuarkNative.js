@@ -1,6 +1,6 @@
 /* إضافة Expo: تولّد عند `expo prebuild` ودجتات الشاشة الرئيسية (4×2 و2×2) واختصارات الأيقونة (الضغط المطوّل)
    وبلاطة الإعدادات السريعة. كل زر يفتح رابطًا عميقًا quarkai://a/<action> يعالجه مسار app/a/[action].tsx. */
-const { withAndroidManifest, withDangerousMod, withMainApplication, withAppBuildGradle } = require('@expo/config-plugins');
+const { withAndroidManifest, withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -65,31 +65,4 @@ function withManifest(config) {
   });
 }
 
-/* البريد المدمج (IMAP/SMTP): تسجيل الحزمة في MainApplication + مكتبة JavaMail لأندرويد في Gradle */
-function withMailPackage(config) {
-  return withMainApplication(config, (cfg) => {
-    const src = cfg.modResults.contents;
-    if (!src.includes('QuarkMailPackage')) {
-      const re = /PackageList\(this\)\.packages\.apply\s*\{/;
-      if (!re.test(src)) throw new Error('quark-native: تعذّر العثور على PackageList في MainApplication — حدّث withMailPackage');
-      cfg.modResults.contents = src.replace(re, (m) => m + '\n          add(QuarkMailPackage())');
-    }
-    return cfg;
-  });
-}
-
-function withMailGradle(config) {
-  return withAppBuildGradle(config, (cfg) => {
-    let g = cfg.modResults.contents;
-    if (!g.includes('android-mail')) {
-      g = g.replace(/^dependencies\s*\{/m, (m) => m + "\n    implementation 'com.sun.mail:android-mail:1.6.7'\n    implementation 'com.sun.mail:android-activation:1.6.7'");
-    }
-    if (!g.includes('quark-mail-excludes')) {
-      g = g.replace(/^android\s*\{/m, (m) => m + "\n    // quark-mail-excludes: ملفات ترخيص مكررة داخل مكتبات JavaMail\n    packagingOptions {\n        resources {\n            excludes += ['META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/DEPENDENCIES', 'META-INF/*.kotlin_module']\n        }\n    }");
-    }
-    cfg.modResults.contents = g;
-    return cfg;
-  });
-}
-
-module.exports = (config) => withMailGradle(withMailPackage(withManifest(withFiles(config))));
+module.exports = (config) => withManifest(withFiles(config));
